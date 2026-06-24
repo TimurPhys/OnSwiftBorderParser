@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv, find_dotenv
 
 from bot.bot import router
+from bot.commands import set_main_menu
 
 load_dotenv(find_dotenv())
 
@@ -15,6 +16,7 @@ dp = Dispatcher()
 
 async def main():
     print("Запуск...")
+    await set_main_menu(bot)
     dp.include_router(router)
     await dp.start_polling(bot)
 

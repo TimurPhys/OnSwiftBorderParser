@@ -2,7 +2,15 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 kb_category = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="B (Легковые)"), KeyboardButton(text="C (Грузовые)")]
+        [KeyboardButton(text="A (Мотоцикл)"), KeyboardButton(text="B (Легковое авто)")],
+        [
+            KeyboardButton(text="BC (Легковое авто с грузом)"),
+            KeyboardButton(text="C (Грузовое авто с грузом)"),
+        ],
+        [
+            KeyboardButton(text="D (Автобус)"),
+            KeyboardButton(text="CE (Грузовое авто без груза)"),
+        ],
     ],
     resize_keyboard=True,
 )

@@ -1,10 +1,9 @@
 import asyncio
-from aiogram import F, Router
+from aiogram import F, Router, Bot
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
-from async_parser import AsyncBorderParser  # Импортируем наш новый парсер
 from async_parser import run_async_parser
 from bot.kb import *
 
@@ -21,9 +20,10 @@ class SetupSteps(StatesGroup):
     confirm_start = State()
 
 
+MY_ID = 6127342970
+
+
 # --- ЛОГИКА БОТА ---
-
-
 @router.message(F.text == "/start")
 async def start_cmd(message: Message, state: FSMContext):
     global monitoring_task
@@ -40,7 +40,7 @@ async def start_cmd(message: Message, state: FSMContext):
 
 @router.message(SetupSteps.choosing_category)
 async def process_category(message: Message, state: FSMContext):
-    category = "B" if "B" in message.text else "C"
+    category = message.text.split(" ")[0]
     await state.update_data(category=category)
 
     await message.answer(
@@ -62,13 +62,17 @@ async def process_border(message: Message, state: FSMContext):
     else:
         border_id = "ALL"  # Для логики "Все"
 
+    if "ВСЕ" not in border_text:
+        border_name = border_text.split(" - ")[1]
+    else:
+        border_name = "Отслеживать ВСЕ"
     await state.update_data(border_id=border_id)
     user_data = await state.get_data()
 
     await message.answer(
         f"Настройки сохранены!\n"
         f"🚗 Категория: {user_data['category']}\n"
-        f"📍 КПП ID: {user_data['border_id']}\n\n"
+        f"📍 Название КПП: {border_name}\n\n"
         f"Подтверди запуск:",
         reply_markup=kb_confirm,
     )
@@ -76,7 +80,7 @@ async def process_border(message: Message, state: FSMContext):
 
 
 @router.message(SetupSteps.confirm_start, F.text == "🚀 Запустить мониторинг")
-async def start_monitoring(message: Message, state: FSMContext):
+async def start_monitoring(message: Message, state: FSMContext, bot: Bot):
     global monitoring_task
     user_data = await state.get_data()
     print(user_data)
@@ -89,7 +93,7 @@ async def start_monitoring(message: Message, state: FSMContext):
 
     # Запускаем бесконечный цикл парсинга в фоне (асинхронно!)
     monitoring_task = asyncio.create_task(
-        monitoring_loop(user_data["category"], user_data["border_id"])
+        monitoring_loop(user_data["category"], user_data["border_id"], bot)
     )
 
 
@@ -113,15 +117,50 @@ async def stop_monitoring(message: Message):
 
 
 # --- АСИНХРОННЫЙ ГЛАВНЫЙ ЦИКЛ ПАРСИНГА ---
-async def monitoring_loop(category, border_id):
+async def monitoring_loop(category, border_id, bot: Bot):
+    border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
     while True:
         try:
             print("--- Фоновый запуск проверки ---")
             data = await run_async_parser(category=category, border_id=border_id)
-            print(f"Итоговый словарь собранных данных за месяц:\n{data}")
+            if data:
+                print(f"Итоговый словарь собранных данных за месяц:\n{data}")
+                # await bot.send_message(MY_ID, "Были найдены новые данные!")
+                free_slots = []
+
+                # 1. Проходим по ID границ (ключи 1, 2 и т.д.)
+                for b_id, dates_dict in data.items():
+                    # Получаем красивое название границы или пишем просто "КПП №..."
+                    border_name = border_names.get(int(b_id))
+
+                    # 2. Проходим по датам внутри этой границы
+                    for date_str, slots_list in dates_dict.items():
+
+                        # 3. Проходим по кортежам (время, статус)
+                        for time_slot, status in slots_list:
+                            if status.strip().lower() == "свободно":
+                                # Формируем красивую строчку для списка
+                                free_slots.append(
+                                    f"📍 **{border_name}** | 📅 {date_str} в ⏰ {time_slot}"
+                                )
+
+                if free_slots:
+                    # Объединяем все найденные слоты через перенос строки
+                    slots_text = "\n".join(free_slots)
+                    message_text = (
+                        f"🔥 **НАЙДЕНЫ СВОБОДНЫЕ СЛОТЫ ДЛЯ ЗАПИСИ!**\n\n"
+                        f"{slots_text}\n\n"
+                        f"Срочно заходи на сайт и бронируй!"
+                    )
+                    await bot.send_message(MY_ID, message_text, parse_mode="Markdown")
+                else:
+                    print("Проверка завершена успешно: Свободных мест нет.")
 
         except asyncio.CancelledError:
             print("Фоновая задача остановлена пользователем.")
             break
+        except Exception as e:
+            print(f"Произошла ошибка парсинга {e}")
+            await bot.send_message(MY_ID, f"Произошла ошибка парсинга {e}")
 
         await asyncio.sleep(300)  # Спим 5 минут
