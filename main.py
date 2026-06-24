@@ -1,19 +1,23 @@
-# from parser import get_monthly_data
-from parser import session_parser
+import asyncio
+from aiogram import Bot, Dispatcher
+import os
+from dotenv import load_dotenv, find_dotenv
+
+from bot.bot import router
+
+load_dotenv(find_dotenv())
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
 
-def job():
-    print("Запуск парсинга...")
-    # get_monthly_data()
-    session_parser()
+async def main():
+    print("Запуск...")
+    dp.include_router(router)
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    job()
-    # while True:
-    #     try:
-    #         job()
-    #     except Exception as e:
-    #         print(f"Ошибка в работе: {e}")
-
-    #     time.sleep(10)
+    asyncio.run(main())

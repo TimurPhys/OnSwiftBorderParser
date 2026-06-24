@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import time
 
 
-class AsyncBorderParser:
+class BorderParser:
     def __init__(self):
         self.session = requests.Session()
         self.headers = {
@@ -75,8 +75,6 @@ class AsyncBorderParser:
 def parse_soup(soup):
     slots = soup.find_all("div", id="timeslot")
     data = {}
-    if len(slots) == 0:
-        raise Exception("Слоты не найдены")
 
     for slot in slots:
         # Безопасно достаем "data-time" (на случай, если у какого-то div его не окажется)
@@ -129,6 +127,8 @@ def session_parser():
                     )
                     soup = BeautifulSoup(response.text, "html.parser")
                     day_data = parse_soup(soup)  # Твоя функция парсинга
+                    if len(day_data) == 0:
+                        raise Exception("Нет данных")
 
                     monthly_data.update(day_data)
                 except Exception as e:
@@ -149,4 +149,3 @@ def session_parser():
         print(f"Окончательные данные: {monthly_data}")
         print("Проверка окончена. Засыпаю на 5 минут.")
         time.sleep(300)
-
