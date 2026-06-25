@@ -9,6 +9,9 @@ async def set_main_menu(bot: Bot):
             command="/start", description="🚀 Настроить и запустить мониторинг границы"
         ),
         BotCommand(command="/stop", description="🛑 Остановить проверку слотов"),
+        BotCommand(
+            command="/check", description="Проверить сколько проверок было сегодя"
+        ),
     ]
     await bot.set_my_commands(main_menu_commands)
     print("📋 Меню команд успешно обновлено в Telegram!")

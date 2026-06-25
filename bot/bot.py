@@ -3,6 +3,7 @@ from aiogram import F, Router, Bot
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from datetime import datetime, timedelta
 
 from async_parser import run_async_parser
 from bot.kb import *
@@ -11,6 +12,9 @@ router = Router()
 
 # Глобальная переменная, которая хранит статус: запущен ли мониторинг
 monitoring_task = None
+monitoring_counter = 0
+first_monitoring_date = None
+last_monitoring_date = None
 
 
 # Описываем шаги опроса (FSM)
@@ -81,17 +85,17 @@ async def process_border(message: Message, state: FSMContext):
 
 @router.message(SetupSteps.confirm_start, F.text == "🚀 Запустить мониторинг")
 async def start_monitoring(message: Message, state: FSMContext, bot: Bot):
-    global monitoring_task
+    global monitoring_task, first_monitoring_date
     user_data = await state.get_data()
     print(user_data)
     await state.clear()
-
     await message.answer(
         "Принято! Запускаю фоновую задачу. Буду проверять каждые 5 минут...",
         reply_markup=ReplyKeyboardRemove(),
     )
 
     # Запускаем бесконечный цикл парсинга в фоне (асинхронно!)
+    first_monitoring_date = datetime.now()
     monitoring_task = asyncio.create_task(
         monitoring_loop(user_data["category"], user_data["border_id"], bot)
     )
@@ -116,14 +120,37 @@ async def stop_monitoring(message: Message):
         await message.answer("Мониторинг и так не работал.")
 
 
+@router.message(F.text == "/check")
+async def check_monitorings(message: Message):
+    global monitoring_task
+    if monitoring_task and not monitoring_task.done():
+        await message.answer(
+            f"🟢 **Мониторинг активен**\n"
+            f"📊 Проверок сегодня: {monitoring_counter}\n"
+            f"⏱ Последняя: {last_monitoring_date.strftime('%H:%M:%S')}",
+            parse_mode="Markdown",
+        )
+    else:
+        await message.answer(
+            "🔴 **Мониторинг остановлен**\n" "Для запуска используй команду /start",
+            parse_mode="Markdown",
+        )
+
+
 # --- АСИНХРОННЫЙ ГЛАВНЫЙ ЦИКЛ ПАРСИНГА ---
 async def monitoring_loop(category, border_id, bot: Bot):
+    global monitoring_counter, last_monitoring_date
     border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
     while True:
         try:
             print("--- Фоновый запуск проверки ---")
             data = await run_async_parser(category=category, border_id=border_id)
             if data:
+                last_monitoring_date = datetime.now()
+                if last_monitoring_date - first_monitoring_date >= timedelta(days=1):
+                    last_monitoring_date = datetime.now()
+                    monitoring_counter = 0
+                monitoring_counter += 1
                 print(f"Итоговый словарь собранных данных за месяц:\n{data}")
                 # await bot.send_message(MY_ID, "Были найдены новые данные!")
                 free_slots = []
