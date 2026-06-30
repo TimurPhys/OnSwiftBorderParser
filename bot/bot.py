@@ -112,9 +112,10 @@ async def cancel_settings(message: Message, state: FSMContext):
 
 @router.message(F.text == "/stop")
 async def stop_monitoring(message: Message):
-    global monitoring_task
+    global monitoring_task, monitoring_counter
     if monitoring_task and not monitoring_task.done():
         monitoring_task.cancel()
+        monitoring_counter = 0
         await message.answer("🛑 Мониторинг успешно остановлен.")
     else:
         await message.answer("Мониторинг и так не работал.")
@@ -139,7 +140,7 @@ async def check_monitorings(message: Message):
 
 # --- АСИНХРОННЫЙ ГЛАВНЫЙ ЦИКЛ ПАРСИНГА ---
 async def monitoring_loop(category, border_id, bot: Bot):
-    global monitoring_counter, last_monitoring_date
+    global monitoring_counter, last_monitoring_date, first_monitoring_date
     border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
     while True:
         try:
@@ -148,7 +149,7 @@ async def monitoring_loop(category, border_id, bot: Bot):
             if data:
                 last_monitoring_date = datetime.now()
                 if last_monitoring_date - first_monitoring_date >= timedelta(days=1):
-                    last_monitoring_date = datetime.now()
+                    first_monitoring_date = datetime.now()
                     monitoring_counter = 0
                 monitoring_counter += 1
                 print(f"Итоговый словарь собранных данных за месяц:\n{data}")
@@ -175,11 +176,11 @@ async def monitoring_loop(category, border_id, bot: Bot):
                     # Объединяем все найденные слоты через перенос строки
                     slots_text = "\n".join(free_slots)
                     message_text = (
-                        f"🔥 **НАЙДЕНЫ СВОБОДНЫЕ СЛОТЫ ДЛЯ ЗАПИСИ!**\n\n"
+                        f"🔥 <b>НАЙДЕНЫ СВОБОДНЫЕ СЛОТЫ ДЛЯ ЗАПИСИ!</b>\n\n"
                         f"{slots_text}\n\n"
-                        f"Срочно заходи на сайт и бронируй!"
+                        f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
                     )
-                    await bot.send_message(MY_ID, message_text, parse_mode="Markdown")
+                    await bot.send_message(MY_ID, message_text, parse_mode="HTML")
                 else:
                     print("Проверка завершена успешно: Свободных мест нет.")
 
