@@ -1,16 +1,12 @@
 import asyncio
 from aiogram import Bot, Dispatcher
-import os
-from dotenv import load_dotenv, find_dotenv
 
 from bot.bot import router
+from bot.form import form_router
 from bot.commands import set_main_menu
+import config
 
-load_dotenv(find_dotenv())
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
 
@@ -18,6 +14,7 @@ async def main():
     print("Запуск...")
     await set_main_menu(bot)
     dp.include_router(router)
+    dp.include_router(form_router)
     await dp.start_polling(bot)
 
 

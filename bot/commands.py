@@ -12,6 +12,7 @@ async def set_main_menu(bot: Bot):
         BotCommand(
             command="/check", description="Проверить сколько проверок было сегодя"
         ),
+        BotCommand(command="/set_filter", description="Сделать фильтр для уведомлений"),
     ]
     await bot.set_my_commands(main_menu_commands)
     print("📋 Меню команд успешно обновлено в Telegram!")

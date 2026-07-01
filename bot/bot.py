@@ -4,8 +4,10 @@ from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from datetime import datetime, timedelta
+from config import *
 
 from async_parser import run_async_parser
+from bot.pushover import send_emergency_alert
 from bot.kb import *
 
 router = Router()
@@ -22,9 +24,6 @@ class SetupSteps(StatesGroup):
     choosing_category = State()
     choosing_border = State()
     confirm_start = State()
-
-
-MY_ID = 6127342970
 
 
 # --- ЛОГИКА БОТА ---
@@ -154,7 +153,8 @@ async def monitoring_loop(category, border_id, bot: Bot):
                 monitoring_counter += 1
                 print(f"Итоговый словарь собранных данных за месяц:\n{data}")
                 # await bot.send_message(MY_ID, "Были найдены новые данные!")
-                free_slots = []
+                matched_slots = []
+                other_slots = []
 
                 # 1. Проходим по ID границ (ключи 1, 2 и т.д.)
                 for b_id, dates_dict in data.items():
@@ -168,13 +168,76 @@ async def monitoring_loop(category, border_id, bot: Bot):
                         for time_slot, status in slots_list:
                             if status.strip().lower() == "свободно":
                                 # Формируем красивую строчку для списка
-                                free_slots.append(
-                                    f"📍 **{border_name}** | 📅 {date_str} в ⏰ {time_slot}"
-                                )
 
-                if free_slots:
+                                slot_line = f"📍 **{border_name}** | 📅 {date_str} в ⏰ {time_slot}"
+
+                                is_match = False  # Флаг, подошел ли конкретный слот
+                                if MY_ID in USER_FILTERS:
+                                    user_pref = USER_FILTERS[MY_ID]
+                                    border_match = user_pref["border"] in b_id
+
+                                    date_match = False
+                                    if user_pref["date_start"] == "any":
+                                        date_match = True
+                                    else:
+                                        try:
+                                            # Из строки "05.07.2026" делаем объект даты
+                                            current_slot_date = datetime.strptime(
+                                                date_str.strip(), "%d.%m.%Y"
+                                            ).date()
+                                            if (
+                                                user_pref["date_start"]
+                                                <= current_slot_date
+                                                <= user_pref["date_end"]
+                                            ):
+                                                date_match = True
+                                        except Exception as e:
+                                            print(f"Ошибка проверки даты: {e}")
+
+                                    time_match = False
+                                    if user_pref["time"] == "any":
+                                        time_match = True
+                                    else:
+                                        try:
+                                            slot_hour = int(time_slot.split(":")[0])
+                                            if user_pref["time"] == "morning" and (
+                                                6 <= slot_hour < 12
+                                            ):
+                                                time_match = True
+                                            elif user_pref["time"] == "day" and (
+                                                12 <= slot_hour < 18
+                                            ):
+                                                time_match = True
+                                            elif user_pref["time"] == "night" and (
+                                                slot_hour >= 18 or slot_hour < 6
+                                            ):
+                                                time_match = True
+                                        except Exception:
+                                            pass
+
+                                    # Если все три условия сошлись — этот слот идеален
+                                    if border_match and date_match and time_match:
+                                        is_match = True
+
+                                # Сортируем слоты по спискам
+                                if is_match:
+                                    matched_slots.append(slot_line)
+                                else:
+                                    other_slots.append(slot_line)
+
+                if matched_slots:
+                    slots_text = "\n".join(other_slots)
+                    message_text = (
+                        f"🔥 <b>НАЙДЕНЫ ИДЕАЛЬНЫЕ СЛОТЫ ПО ФИЛЬТРУ!</b>\n\n"
+                        f"{slots_text}\n\n"
+                        f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
+                    )
+                    await bot.send_message(MY_ID, message_text, parse_mode="HTML")
+                    await send_emergency_alert(slot_info=matched_slots[0].replace("**", ""))
+
+                elif other_slots:
                     # Объединяем все найденные слоты через перенос строки
-                    slots_text = "\n".join(free_slots)
+                    slots_text = "\n".join(other_slots)
                     message_text = (
                         f"🔥 <b>НАЙДЕНЫ СВОБОДНЫЕ СЛОТЫ ДЛЯ ЗАПИСИ!</b>\n\n"
                         f"{slots_text}\n\n"
