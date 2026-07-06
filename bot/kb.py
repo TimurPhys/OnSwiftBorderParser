@@ -34,14 +34,17 @@ kb_confirm = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+
 def get_inline_borders_kb():
     builder = InlineKeyboardBuilder()
     # Текст на кнопке, и что кнопка отправляет в код (callback_data)
     builder.button(text="📍 Нарва (Narva)", callback_data="border_1")
-    builder.button(text="📍 Лухамаа (Luhamaa)", callback_data="border_2")
-    builder.button(text="📍 Койдула (Koidula)", callback_data="border_3")
+    builder.button(text="📍 Койдула (Koidula)", callback_data="border_2")
+    builder.button(text="📍 Лухамаа (Luhamaa)", callback_data="border_3")
+    builder.button(text="➡️ Продолжить", callback_data="border_continue")
     builder.adjust(1)  # Кнопки одна под другой
     return builder
+
 
 def get_inline_times_kb():
     builder = InlineKeyboardBuilder()

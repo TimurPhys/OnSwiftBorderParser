@@ -1,5 +1,6 @@
 import asyncio
 from aiogram import F, Router, Bot
+from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -41,7 +42,7 @@ async def start_cmd(message: Message, state: FSMContext):
     await state.set_state(SetupSteps.choosing_category)
 
 
-@router.message(SetupSteps.choosing_category)
+@router.message(SetupSteps.choosing_category, ~Command("stop"))
 async def process_category(message: Message, state: FSMContext):
     category = message.text.split(" ")[0]
     await state.update_data(category=category)
@@ -52,7 +53,7 @@ async def process_category(message: Message, state: FSMContext):
     await state.set_state(SetupSteps.choosing_border)
 
 
-@router.message(SetupSteps.choosing_border)
+@router.message(SetupSteps.choosing_border, ~Command("stop"))
 async def process_border(message: Message, state: FSMContext):
     border_text = message.text
     # Парсим ID границы из текста кнопки
@@ -82,7 +83,9 @@ async def process_border(message: Message, state: FSMContext):
     await state.set_state(SetupSteps.confirm_start)
 
 
-@router.message(SetupSteps.confirm_start, F.text == "🚀 Запустить мониторинг")
+@router.message(
+    SetupSteps.confirm_start, F.text == "🚀 Запустить мониторинг", ~Command("stop")
+)
 async def start_monitoring(message: Message, state: FSMContext, bot: Bot):
     global monitoring_task, first_monitoring_date
     user_data = await state.get_data()
@@ -100,7 +103,9 @@ async def start_monitoring(message: Message, state: FSMContext, bot: Bot):
     )
 
 
-@router.message(SetupSteps.confirm_start, F.text == "❌ Сбросить настройки")
+@router.message(
+    SetupSteps.confirm_start, F.text == "❌ Сбросить настройки", ~Command("stop")
+)
 async def cancel_settings(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
@@ -110,14 +115,27 @@ async def cancel_settings(message: Message, state: FSMContext):
 
 
 @router.message(F.text == "/stop")
-async def stop_monitoring(message: Message):
-    global monitoring_task, monitoring_counter
-    if monitoring_task and not monitoring_task.done():
+async def stop_monitoring(message: Message, state: FSMContext):
+    global monitoring_task, monitoring_counter, USER_FILTERS
+    current_state = await state.get_state()
+    if current_state is not None:
+        await state.clear()
+        USER_FILTERS.clear()
+        await message.answer(
+            "❌ Заполнение прервано. Вы вернулись в начало.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    elif monitoring_task and not monitoring_task.done():
         monitoring_task.cancel()
         monitoring_counter = 0
-        await message.answer("🛑 Мониторинг успешно остановлен.")
+        await message.answer(
+            "🛑 Мониторинг успешно остановлен. Персональные фильтры не сброшены.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
     else:
-        await message.answer("Мониторинг и так не работал.")
+        await message.answer(
+            "Мониторинг и так не работал.", reply_markup=ReplyKeyboardRemove()
+        )
 
 
 @router.message(F.text == "/check")
@@ -174,7 +192,11 @@ async def monitoring_loop(category, border_id, bot: Bot):
                                 is_match = False  # Флаг, подошел ли конкретный слот
                                 if MY_ID in USER_FILTERS:
                                     user_pref = USER_FILTERS[MY_ID]
-                                    border_match = user_pref["border"] in b_id
+                                    
+                                    border_match = False
+                                    for border_id in user_pref["borders"]: 
+                                        if (int(border_id) == int(b_id)):
+                                            border_match = True
 
                                     date_match = False
                                     if user_pref["date_start"] == "any":
@@ -226,14 +248,16 @@ async def monitoring_loop(category, border_id, bot: Bot):
                                     other_slots.append(slot_line)
 
                 if matched_slots:
-                    slots_text = "\n".join(other_slots)
+                    slots_text = "\n".join(matched_slots)
                     message_text = (
                         f"🔥 <b>НАЙДЕНЫ ИДЕАЛЬНЫЕ СЛОТЫ ПО ФИЛЬТРУ!</b>\n\n"
                         f"{slots_text}\n\n"
                         f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
                     )
                     await bot.send_message(MY_ID, message_text, parse_mode="HTML")
-                    await send_emergency_alert(slot_info=matched_slots[0].replace("**", ""))
+                    await send_emergency_alert(
+                        slot_info=matched_slots[0].replace("**", "")
+                    )
 
                 elif other_slots:
                     # Объединяем все найденные слоты через перенос строки

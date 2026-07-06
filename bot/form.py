@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from datetime import datetime
 import re
 from bot.kb import *
@@ -34,20 +34,64 @@ async def class_start_filter(message: Message, state: FSMContext):
 # 3. Ловим границу
 @form_router.callback_query(SearchPreferences.waiting_for_border)
 async def process_border(callback: CallbackQuery, state: FSMContext):
-    border_val = int(callback.data.lower().split("_")[1])
-    await state.update_data(border=border_val)
+    # Если нажали кнопку продолжить
+    if callback.data == "border_continue":
+        user_data = await state.get_data()
+        chosen_borders = user_data.get("borders", [])
+
+        if not chosen_borders:
+            await callback.answer(
+                "⚠️ Выберите хотя бы один пункт перед продолжением!", show_alert=True
+            )
+            return
+
+        names_str = ", ".join([border_names.get(b) for b in chosen_borders])
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="📅 Искать на любую дату", callback_data="date_any")
+        await callback.message.edit_text(
+            f"📍 Выбраны пункты: **{border_names.get(names_str)}**\n\n"
+            f"Укажи период дат, в который ты готов ехать.\n"
+            f"Напиши его текстом в формате: `ДД.ММ - ДД.ММ`\n\n"
+            f"ℹ️ *Пример: 05.07 - 05.08* (или просто нажмите кнопку ниже, если дата не важна)",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown",
+        )
+        await state.set_state(SearchPreferences.waiting_for_date)
+        await callback.answer()
+        return
+
+    # Логика обработки нескольких границ
+
+    current_choice = int(callback.data.lower().split("_")[1])
+
+    user_data = await state.get_data()
+    chosen_borders = user_data.get("borders", [])
+
+    if current_choice not in chosen_borders:
+        chosen_borders.append(current_choice)
+
+    await state.update_data(borders=chosen_borders)
 
     builder = InlineKeyboardBuilder()
-    builder.button(text="📅 Искать на любую дату", callback_data="date_any")
+    for b_id, b_name in border_names.items():
+        if b_id not in chosen_borders:
+            builder.button(text=f"📍 {b_name}", callback_data=f"border_{b_id}")
+
+    builder.adjust(1)
+    builder.row(
+        InlineKeyboardButton(text="➡️ Продолжить", callback_data="border_continue")
+    )
+
+    names_str = ", ".join([border_names.get(b) for b in chosen_borders])
+
     await callback.message.edit_text(
-        f"📍 Выбран пункт: **{border_names.get(border_val)}**\n\n"
-        f"Укажи период дат, в который ты готов ехать.\n"
-        f"Напиши его текстом в формате: `ДД.ММ - ДД.ММ`\n\n"
-        f"ℹ️ *Пример: 05.07 - 05.08* (или просто нажмите кнопку ниже, если дата не важна)",
+        f"📝 Уже выбрано: **{names_str}**\n\n"
+        f"Вы можете выбрать еще пункты из списка ниже или нажать 'Продолжить':",
         reply_markup=builder.as_markup(),
         parse_mode="Markdown",
     )
-    await state.set_state(SearchPreferences.waiting_for_date)
+    await callback.answer()
 
 
 @form_router.callback_query(SearchPreferences.waiting_for_date, F.data == "date_any")
@@ -128,7 +172,7 @@ async def process_time(callback: CallbackQuery, state: FSMContext):
 
     # Записываем в наш глобальный фильтр
     USER_FILTERS[callback.from_user.id] = {
-        "border": user_data["border"],
+        "borders": user_data["borders"],
         "date_start": user_data["date_start"],
         "date_end": user_data["date_end"],
         "time": user_data["time"],
@@ -136,10 +180,12 @@ async def process_time(callback: CallbackQuery, state: FSMContext):
 
     print(USER_FILTERS)
 
+    borders_str = ", ".join([border_names.get(b) for b in user_data["borders"]])
+
     # Убираем кнопки и пишем финальный статус
     await callback.message.edit_text(
         f"✅ **Фильтр успешно активирован!**\n\n"
-        f"📍 Пункт: {border_names.get(user_data['border'])}\n"
+        f"📍 Пункты: {borders_str}\n"
         f"📅 Дата: {user_data['date_start']} по {user_data['date_end']}\n"
         f"🕒 Время суток: {user_data['time']}\n\n"
         f"Если парсер найдет этот слот, бот вам позвонит!"

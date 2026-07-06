@@ -86,7 +86,7 @@ async def run_async_parser(category="B", border_id=3):
         print("✅ Сессия успешно создана. Начинаем пробный обход дат за месяц...")
 
         # Сделаем тестовый проход по тем же шагам (раз в 4 дня)
-        data = await send_request(parser, border_id)
+        data = await send_request(parser)
         monthly_data.update({border_id: data})
 
     else:
@@ -99,7 +99,7 @@ async def run_async_parser(category="B", border_id=3):
                 return
             print("✅ Сессия успешно создана. Начинаем пробный обход дат за месяц...")
 
-            data = await send_request(parser, i)
+            data = await send_request(parser)
             monthly_data.update({i: data})
 
     # Закрываем клиент, чтобы не висел в памяти (опционально для httpx)
@@ -108,7 +108,7 @@ async def run_async_parser(category="B", border_id=3):
     return monthly_data
 
 
-async def send_request(parser: AsyncBorderParser, border_id):
+async def send_request(parser: AsyncBorderParser):
     start_date = datetime.now()
     base_counter = 1782292979566
     monthly_data = {}
