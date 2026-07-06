@@ -18,6 +18,7 @@ monitoring_task = None
 monitoring_counter = 0
 first_monitoring_date = None
 last_monitoring_date = None
+border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
 
 
 # Описываем шаги опроса (FSM)
@@ -142,12 +143,25 @@ async def stop_monitoring(message: Message, state: FSMContext):
 async def check_monitorings(message: Message):
     global monitoring_task
     if monitoring_task and not monitoring_task.done():
-        await message.answer(
-            f"🟢 **Мониторинг активен**\n"
+        user_pref = USER_FILTERS.get(MY_ID)
+        message_str = (
+            f"🟢 <b>Мониторинг активен</b>\n"
             f"📊 Проверок сегодня: {monitoring_counter}\n"
-            f"⏱ Последняя: {last_monitoring_date.strftime('%H:%M:%S')}",
-            parse_mode="Markdown",
+            f"⏱ Последняя: {last_monitoring_date.strftime('%H:%M:%S')}\n\n"
         )
+
+        if user_pref is not None:
+            borders_str = ", ".join([border_names.get(b) for b in user_pref["borders"]])
+            message_str += (
+                f"<b>Персональные настройки:</b>\n"
+                f"📍 Пункты: {borders_str}\n"
+                f"📅 Дата: {user_pref['date_start']} по {user_pref['date_end']}\n"
+                f"🕒 Время суток: {user_pref['time']}\n\n"
+            )
+        else:
+            message_str += f"<b>Персональные настройки:</b> Отсутствуют\n\n"
+
+        await message.answer(text=message_str, parse_mode="HTML")
     else:
         await message.answer(
             "🔴 **Мониторинг остановлен**\n" "Для запуска используй команду /start",
@@ -157,8 +171,7 @@ async def check_monitorings(message: Message):
 
 # --- АСИНХРОННЫЙ ГЛАВНЫЙ ЦИКЛ ПАРСИНГА ---
 async def monitoring_loop(category, border_id, bot: Bot):
-    global monitoring_counter, last_monitoring_date, first_monitoring_date
-    border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
+    global monitoring_counter, last_monitoring_date, first_monitoring_date, border_names
     while True:
         try:
             print("--- Фоновый запуск проверки ---")
@@ -192,10 +205,10 @@ async def monitoring_loop(category, border_id, bot: Bot):
                                 is_match = False  # Флаг, подошел ли конкретный слот
                                 if MY_ID in USER_FILTERS:
                                     user_pref = USER_FILTERS[MY_ID]
-                                    
+
                                     border_match = False
-                                    for border_id in user_pref["borders"]: 
-                                        if (int(border_id) == int(b_id)):
+                                    for border_id in user_pref["borders"]:
+                                        if int(border_id) == int(b_id):
                                             border_match = True
 
                                     date_match = False
