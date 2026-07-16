@@ -1,15 +1,21 @@
 import asyncio
 from aiogram import F, Router, Bot
 from aiogram.filters import Command
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import (
+    Message,
+    ReplyKeyboardRemove,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from datetime import datetime, timedelta
+from datetime import datetime
 from config.config import *
 
-from jobs.async_parser import run_async_parser
-from jobs.pushover import send_emergency_alert
-from bot.kb import *
+from bot.view.kb import *
+from bot.monitoring_loop import monitoring_loop
+
+from db.db import check_user_payment
 
 router = Router()
 
@@ -31,16 +37,32 @@ class SetupSteps(StatesGroup):
 # --- ЛОГИКА БОТА ---
 @router.message(F.text == "/start")
 async def start_cmd(message: Message, state: FSMContext):
-    global monitoring_task
-    if monitoring_task and not monitoring_task.done():
-        await message.answer("Мониторинг уже запущен! Напиши /stop, чтобы остановить.")
-        return
+    user_id = int(message.from_user.id)
+    res = await check_user_payment(user_id)
 
-    await message.answer(
-        "Привет, хозяин! Давай настроим парсер.\nШаг 1: Выбери категорию транспорта:",
-        reply_markup=kb_category,
-    )
-    await state.set_state(SetupSteps.choosing_category)
+    if not res["exists"]:
+        welcome_text = (
+            "👋 **Привет! Я твой личный бот-информатор по границам Эстония-Россия**\n\n"
+            "Я собираю информацию о свободных местах каждые 5 минут с сайта GoSwift "
+            "и присылаю уведомления, если есть свободные места** "
+            "Чтобы начать пользоваться, активируй подписку на 31 дней 👇"
+        )
+
+        payment_keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💳 Оформить подписку (31 дней)",
+                        # Замени ссылку на свою реальную платежную ссылку или вебхук
+                        callback_data="buy_subscription",
+                    )
+                ]
+            ]
+        )
+
+        await message.answer(
+            text=welcome_text, reply_markup=payment_keyboard, parse_mode="Markdown"
+        )
 
 
 @router.message(SetupSteps.choosing_category, ~Command("stop"))
@@ -143,7 +165,7 @@ async def stop_monitoring(message: Message, state: FSMContext):
 async def check_monitorings(message: Message):
     global monitoring_task
     if monitoring_task and not monitoring_task.done():
-        user_pref = USER_FILTERS.get(MY_ID)
+        user_pref = USER_FILTERS.get(message.from_user.id)
         message_str = (
             f"🟢 <b>Мониторинг активен</b>\n"
             f"📊 Проверок сегодня: {monitoring_counter}\n"
@@ -167,128 +189,3 @@ async def check_monitorings(message: Message):
             "🔴 **Мониторинг остановлен**\n" "Для запуска используй команду /start",
             parse_mode="Markdown",
         )
-
-
-# --- АСИНХРОННЫЙ ГЛАВНЫЙ ЦИКЛ ПАРСИНГА ---
-async def monitoring_loop(category, border_id, bot: Bot):
-    global monitoring_counter, last_monitoring_date, first_monitoring_date, border_names
-    while True:
-        try:
-            print("--- Фоновый запуск проверки ---")
-            data = await run_async_parser(category=category, border_id=border_id)
-            if data:
-                last_monitoring_date = datetime.now()
-                if last_monitoring_date - first_monitoring_date >= timedelta(days=1):
-                    first_monitoring_date = datetime.now()
-                    monitoring_counter = 0
-                monitoring_counter += 1
-                print(f"Итоговый словарь собранных данных за месяц:\n{data}")
-                # await bot.send_message(MY_ID, "Были найдены новые данные!")
-                matched_slots = []
-                other_slots = []
-
-                # 1. Проходим по ID границ (ключи 1, 2 и т.д.)
-                for b_id, dates_dict in data.items():
-                    # Получаем красивое название границы или пишем просто "КПП №..."
-                    border_name = border_names.get(int(b_id))
-
-                    # 2. Проходим по датам внутри этой границы
-                    for date_str, slots_list in dates_dict.items():
-
-                        # 3. Проходим по кортежам (время, статус)
-                        for time_slot, status in slots_list:
-                            if status.strip().lower() == "свободно":
-                                # Формируем красивую строчку для списка
-
-                                slot_line = f"📍 **{border_name}** | 📅 {date_str} в ⏰ {time_slot}"
-
-                                is_match = False  # Флаг, подошел ли конкретный слот
-                                if MY_ID in USER_FILTERS:
-                                    user_pref = USER_FILTERS[MY_ID]
-
-                                    border_match = False
-                                    for border_id in user_pref["borders"]:
-                                        if int(border_id) == int(b_id):
-                                            border_match = True
-
-                                    date_match = False
-                                    if user_pref["date_start"] == "any":
-                                        date_match = True
-                                    else:
-                                        try:
-                                            # Из строки "05.07.2026" делаем объект даты
-                                            current_slot_date = datetime.strptime(
-                                                date_str.strip(), "%d.%m.%Y"
-                                            ).date()
-                                            if (
-                                                user_pref["date_start"]
-                                                <= current_slot_date
-                                                <= user_pref["date_end"]
-                                            ):
-                                                date_match = True
-                                        except Exception as e:
-                                            print(f"Ошибка проверки даты: {e}")
-
-                                    time_match = False
-                                    if user_pref["time"] == "any":
-                                        time_match = True
-                                    else:
-                                        try:
-                                            slot_hour = int(time_slot.split(":")[0])
-                                            if user_pref["time"] == "morning" and (
-                                                6 <= slot_hour < 12
-                                            ):
-                                                time_match = True
-                                            elif user_pref["time"] == "day" and (
-                                                12 <= slot_hour < 18
-                                            ):
-                                                time_match = True
-                                            elif user_pref["time"] == "night" and (
-                                                slot_hour >= 18 or slot_hour < 6
-                                            ):
-                                                time_match = True
-                                        except Exception:
-                                            pass
-
-                                    # Если все три условия сошлись — этот слот идеален
-                                    if border_match and date_match and time_match:
-                                        is_match = True
-
-                                # Сортируем слоты по спискам
-                                if is_match:
-                                    matched_slots.append(slot_line)
-                                else:
-                                    other_slots.append(slot_line)
-
-                if matched_slots:
-                    slots_text = "\n".join(matched_slots)
-                    message_text = (
-                        f"🔥 <b>НАЙДЕНЫ ИДЕАЛЬНЫЕ СЛОТЫ ПО ФИЛЬТРУ!</b>\n\n"
-                        f"{slots_text}\n\n"
-                        f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
-                    )
-                    await bot.send_message(MY_ID, message_text, parse_mode="HTML")
-                    await send_emergency_alert(
-                        slot_info=matched_slots[0].replace("**", "")
-                    )
-
-                elif other_slots:
-                    # Объединяем все найденные слоты через перенос строки
-                    slots_text = "\n".join(other_slots)
-                    message_text = (
-                        f"🔥 <b>НАЙДЕНЫ СВОБОДНЫЕ СЛОТЫ ДЛЯ ЗАПИСИ!</b>\n\n"
-                        f"{slots_text}\n\n"
-                        f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
-                    )
-                    await bot.send_message(MY_ID, message_text, parse_mode="HTML")
-                else:
-                    print("Проверка завершена успешно: Свободных мест нет.")
-
-        except asyncio.CancelledError:
-            print("Фоновая задача остановлена пользователем.")
-            break
-        except Exception as e:
-            print(f"Произошла ошибка парсинга {e}")
-            await bot.send_message(MY_ID, f"Произошла ошибка парсинга {e}")
-
-        await asyncio.sleep(300)  # Спим 5 минут
