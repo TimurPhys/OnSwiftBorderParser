@@ -6,7 +6,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from datetime import datetime
 import re
 from bot.kb import *
-from config import *
+from config.config import *
 
 form_router = Router()
 

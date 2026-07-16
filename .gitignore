@@ -1,3 +1,16 @@
-.venv
-__pycache__
+# Виртуальное окружение (игнорирует папку в корне и любых подпапках)
+.venv/
+venv/
+
+# Файлы конфигурации и секреты (ключи)
 .env
+.env.*
+private.key
+*.key
+
+# Кэш Python (игнорирует все папки __pycache__ и файлы .pyc)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/

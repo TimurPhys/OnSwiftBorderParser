@@ -5,10 +5,10 @@ from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from datetime import datetime, timedelta
-from config import *
+from config.config import *
 
-from async_parser import run_async_parser
-from bot.pushover import send_emergency_alert
+from jobs.async_parser import run_async_parser
+from jobs.pushover import send_emergency_alert
 from bot.kb import *
 
 router = Router()

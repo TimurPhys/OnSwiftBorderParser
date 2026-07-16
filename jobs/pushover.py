@@ -1,5 +1,5 @@
 import httpx
-import config
+import config.config as config
 
 PUSHOVER_USER_KEY = config.PUSHOVER_USER_KEY
 PUSHOVER_API_TOKEN = config.PUSHOVER_API_TOKEN
