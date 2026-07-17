@@ -5,7 +5,9 @@ load_dotenv(find_dotenv())
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
-PAYMENTS_TOKEN = os.getenv("PAYMENTS_TOKEN")
+
+
+PAYMENT_SUBSCRIPTION_LINK = os.getenv("PAYMENT_SUBSCRIPTION_LINK")
 
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")

@@ -15,7 +15,7 @@ from config.config import *
 from bot.view.kb import *
 from bot.monitoring_loop import monitoring_loop
 
-from db.db import check_user_payment
+from db.db import get_user_instance
 
 router = Router()
 
@@ -38,9 +38,9 @@ class SetupSteps(StatesGroup):
 @router.message(F.text == "/start")
 async def start_cmd(message: Message, state: FSMContext):
     user_id = int(message.from_user.id)
-    res = await check_user_payment(user_id)
+    user = await get_user_instance(user_id)
 
-    if not res["exists"]:
+    if not user["exists"]:
         welcome_text = (
             "👋 **Привет! Я твой личный бот-информатор по границам Эстония-Россия**\n\n"
             "Я собираю информацию о свободных местах каждые 5 минут с сайта GoSwift "
@@ -48,20 +48,15 @@ async def start_cmd(message: Message, state: FSMContext):
             "Чтобы начать пользоваться, активируй подписку на 31 дней 👇"
         )
 
-        payment_keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="💳 Оформить подписку (31 дней)",
-                        # Замени ссылку на свою реальную платежную ссылку или вебхук
-                        callback_data="buy_subscription",
-                    )
-                ]
-            ]
+        user_id = message.from_user.id
+        dynamic_url = f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}"
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="💳 Оплатить", url=dynamic_url)]]
         )
 
         await message.answer(
-            text=welcome_text, reply_markup=payment_keyboard, parse_mode="Markdown"
+            text=welcome_text, reply_markup=keyboard, parse_mode="Markdown"
         )
 
 

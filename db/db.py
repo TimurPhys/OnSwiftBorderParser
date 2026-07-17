@@ -1,5 +1,5 @@
 import aiosqlite
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from config.config import DB_NAME
 
@@ -9,7 +9,9 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
-                is_paid INTEGER DEFAULT 0,
+                is_trial INTEGER DEFAULT 0,
+                is_paid INTEGER DEFAULT 0,  
+                has_dlc INTEGER DEFAULT 0,
                 last_payment_date TEXT
             )
         """)
@@ -17,38 +19,101 @@ async def init_db():
     print("База данных успешно инициализирована (Async).")
 
 
-async def set_user_paid(user_id: int):
+# Начинаем пробный период у пользователя (до этого провека существует ли пользователь в базе)
+async def start_trial(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await db.execute(
             """
-            INSERT INTO users (user_id, is_paid, last_payment_date)
-            VALUES (?, 1, ?)
+            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date)
+            VALUES (?, 1, 0, 0, ?)
+        """,
+            (user_id, now_str),
+        )
+
+
+## Три сценария покупки -
+# 1. Просто купить подписку за 5 евро
+# 2. Купить полный вариант со звонками за 5+3 = 8 евро
+# 3. Докупить возможность получать звонки за 3 евро
+
+
+# ----- 1. Просто купить подписку за 5 евро -----
+async def just_bought_subscription(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await db.execute(
+            """
+            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date)
+            VALUES (?, 0, 1, 0, ?)
             ON CONFLICT(user_id) DO UPDATE SET
+                        is_trial = 0,
                         is_paid = 1,
+                        has_dlc = 0,
                         last_payment_date = ?
         """,
             (user_id, now_str, now_str),
         )
         await db.commit()
-    print(f"Пользователь {user_id} совершил оплату в {now_str}.")
+    print(f"Пользователь {user_id} купил подписку в {now_str}.")
 
 
-async def check_user_payment(user_id: int) -> dict:
+# ----- 2. Купить полный вариант со звонками за 5+3 = 8 евро -----
+async def bought_full_package(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("SELECT is_paid, last_payment_date FROM users WHERE user_id = ?", (user_id,))
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await db.execute(
+            """
+            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date)
+            VALUES (?, 0, 1, 1, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                        is_trial = 0,
+                        is_paid = 1,
+                        has_dlc = 1,
+                        last_payment_date = ?
+        """,
+            (user_id, now_str, now_str),
+        )
+        await db.commit()
+    print(f"Пользователь {user_id} купил полную подписку со звонками в {now_str}.")
+
+
+# ----- 3. Докупить возможность получать звонки за 3 евро -----
+async def has_purchased_calls(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            """
+            UPDATE users
+            SET has_dlc = 1
+            WHERE user_id = ?
+        """,
+            (user_id,),
+        )
+        await db.commit()
+    print(f"Пользователь {user_id} докупил возможность получать звонки.")
+
+
+## 3 сценария проверки
+# 1. Оплатил ли человек подписку и может ли он просто получать сообщения
+# 2. Действителен ли у человека пробный период
+# 3. Есть ли человека возможность получать звонки
+
+# Просто получить объект пользователя (если существует)
+async def get_user_instance(user_id: int) -> dict:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT is_trial, is_paid, has_dlc, last_payment_date FROM users WHERE user_id = ?",
+            (user_id,),
+        )
         row = await cursor.fetchone()
-
-    if row:
-        if not bool(row[0]):
-            return {"exists": True, "is_paid": False}
-
-        last_payment_date = datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S")
-        if datetime.now() <= last_payment_date + timedelta(
-            days=30
-        ):  # Проверяем, что срок подписки еще не прошел
-            return {"exists": True, "is_paid": True}
-        else:
-            return {"exists": True, "is_paid": False}
-
-    return {"exists": False}
+        if row is None:
+            return {"exists": False}
+        
+        return {
+            "exists": True,
+            "is_trial": row[0],
+            "is_paid": row[1],
+            "has_dlc": row[2],
+            "last_payment_date": row[3],
+        }
+    

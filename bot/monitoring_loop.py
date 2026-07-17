@@ -5,7 +5,6 @@ from aiogram import Bot
 from datetime import datetime, timedelta
 
 from jobs.async_parser import run_async_parser
-from jobs.pushover import send_emergency_alert
 
 from config.config import *
 
@@ -108,9 +107,6 @@ async def monitoring_loop(category, border_id, bot: Bot):
                         f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
                     )
                     await bot.send_message(ADMIN_ID, message_text, parse_mode="HTML")
-                    await send_emergency_alert(
-                        slot_info=matched_slots[0].replace("**", "")
-                    )
 
                 elif other_slots:
                     # Объединяем все найденные слоты через перенос строки
