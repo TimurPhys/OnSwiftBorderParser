@@ -2,6 +2,7 @@ from config.config import PAYMENT_SUBSCRIPTION_LINK, PAYMENT_SUBSCRIPTION_AND_CA
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from datetime import datetime, timedelta
 
 kb_category = ReplyKeyboardMarkup(
     keyboard=[
@@ -37,6 +38,35 @@ kb_confirm = ReplyKeyboardMarkup(
 )
 
 
+def get_user_interface(user: dict):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Статистика", callback_data="check")
+    builder.button(text="Помощь (Инструкция)", callback_data="help")
+    last_payment_date = user["last_payment_date"]
+    if user["is_trial"]:
+        end_of_subscription = datetime.strftime(
+            datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
+            + timedelta(days=7),
+            "%Y-%m-%d",
+        )
+        start_text = f"Ваш профиль активен и находится в пробном периоде. Вы будете получать уведомления о свободных местах на границе до {end_of_subscription}."
+        builder.button(text="Купить подписку", callback_data="buy_subscription")
+    else:
+        end_of_subscription = datetime.strftime(
+            datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
+            + timedelta(days=31),
+            "%Y-%m-%d",
+        )
+        if user["is_paid"] and not user["has_dlc"]:
+            start_text = f"Ваш профиль активен и действует стандратная подписка без звонком. Вы будете получать уведомления о свободных местах на границе до {end_of_subscription}."
+            builder.button(text="Купить звонки", callback_data="buy_calls")
+        elif user["is_paid"] and user["has_dlc"]:
+            start_text = f"Ваш профиль активен и действует полная подписка со звонками. Вы будете получать уведомления и звонки о свободных местах на границе до {end_of_subscription}."
+            builder.button(text="Настроить фильтр", callback_data="set_filter")
+    builder.adjust(2)
+    return builder, start_text
+
+
 def get_inline_init_buttons(user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(
@@ -49,8 +79,15 @@ def get_inline_init_buttons(user_id: int):
         callback_data="type_2",
         url=f"{PAYMENT_SUBSCRIPTION_AND_CALLS_LINK}?client_reference_id={user_id}?offer_type=2",
     )
-    builder.button(text="Начать пробный период (7-дней)", callback_data="type_3")
+    builder.button(text="Начать пробный период (7-дней)", callback_data="trial")
     builder.adjust(1)
+    return builder
+
+
+def get_inline_buttons():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да", callback_data="yes_confirm")
+    builder.button(text="Нет", callback_data="no_deny")
     return builder
 
 

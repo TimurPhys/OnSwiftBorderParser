@@ -32,7 +32,7 @@ async def main():
     await site.start()
     print("🌐 Веб-сервер Stripe Webhook запущен на порту 8080.")
 
-    await set_main_menu(bot)
+    # await set_main_menu(bot)
     dp.include_router(router)
     dp.include_router(form_router)
     dp.include_router(payment_router)

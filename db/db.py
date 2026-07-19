@@ -20,7 +20,7 @@ async def init_db():
 
 
 # Начинаем пробный период у пользователя (до этого провека существует ли пользователь в базе)
-async def start_trial(user_id: int):
+async def start_trial_subscription(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await db.execute(
@@ -30,6 +30,8 @@ async def start_trial(user_id: int):
         """,
             (user_id, now_str),
         )
+        await db.commit()
+    print(f"Пользователь {user_id} оформил пробный период в {now_str}.")
 
 
 ## Три сценария покупки -
@@ -111,9 +113,9 @@ async def get_user_instance(user_id: int) -> dict:
         
         return {
             "exists": True,
-            "is_trial": row[0],
-            "is_paid": row[1],
-            "has_dlc": row[2],
+            "is_trial": bool(row[0]),
+            "is_paid": bool(row[1]),
+            "has_dlc": bool(row[2]),
             "last_payment_date": row[3],
         }
     

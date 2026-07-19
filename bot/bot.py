@@ -6,6 +6,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    CallbackQuery,
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -15,7 +16,7 @@ from config.config import *
 from bot.view.kb import *
 from bot.monitoring_loop import monitoring_loop
 
-from db.db import get_user_instance
+from db.db import get_user_instance, start_trial_subscription
 
 router = Router()
 
@@ -53,6 +54,46 @@ async def start_cmd(message: Message, state: FSMContext):
         await message.answer(
             text=welcome_text, reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
+
+    # Пользователь уже существует и записан
+    else:
+        kb, start_text = get_user_interface(user)
+        await message.answer(text=start_text, reply_markup=kb.as_markup())
+
+
+@router.callback_query(F.data == "trial")
+async def ask_to_start_trial(callback: CallbackQuery):
+    kb = get_inline_buttons()
+    await callback.message.edit_text(
+        text="Вы уверены, что хотите начать пробный период?",
+        reply_markup=kb.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "yes_confirm")
+async def start_trial(callback: CallbackQuery):
+    user_id = int(callback.from_user.id)
+    print(user_id)
+    try:
+        await start_trial_subscription(user_id)
+        await callback.message.edit_text(
+            text="Пробный период подписки успешно начат. Теперь вы сможете сразу видеть свободные места на границе, если они появляются."
+        )
+        await callback.answer()
+    except Exception as e:
+        print(f"Произошла непредвиденная ошибка {e}")
+        await callback.answer(text=f"Произошла непредвиденная ошибка {e}")
+
+
+@router.callback_query(F.data == "no_deny")
+async def start_trial(callback: CallbackQuery):
+    try:
+        await callback.message.delete()
+        await callback.answer()
+    except Exception as e:
+        print(f"Произошла непредвиденная ошибка {e}")
+        await callback.answer(text=f"Произошла непредвиденная ошибка {e}")
 
 
 @router.message(SetupSteps.choosing_category, ~Command("stop"))
