@@ -1,3 +1,5 @@
+from config.config import PAYMENT_SUBSCRIPTION_LINK, PAYMENT_SUBSCRIPTION_AND_CALLS_LINK
+
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -33,6 +35,23 @@ kb_confirm = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
+
+
+def get_inline_init_buttons(user_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Купить подписку (5 €)",
+        callback_data="type_1",
+        url=f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}?offer_type=1",
+    )
+    builder.button(
+        text="Купить подписку + звонки (8 €)",
+        callback_data="type_2",
+        url=f"{PAYMENT_SUBSCRIPTION_AND_CALLS_LINK}?client_reference_id={user_id}?offer_type=2",
+    )
+    builder.button(text="Начать пробный период (7-дней)", callback_data="type_3")
+    builder.adjust(1)
+    return builder
 
 
 def get_inline_borders_kb():

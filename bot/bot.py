@@ -48,15 +48,10 @@ async def start_cmd(message: Message, state: FSMContext):
             "Чтобы начать пользоваться, активируй подписку на 31 дней 👇"
         )
 
-        user_id = message.from_user.id
-        dynamic_url = f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}"
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="💳 Оплатить", url=dynamic_url)]]
-        )
-
+        user_id = int(message.from_user.id)
+        kb = get_inline_init_buttons(user_id)
         await message.answer(
-            text=welcome_text, reply_markup=keyboard, parse_mode="Markdown"
+            text=welcome_text, reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
 
 
