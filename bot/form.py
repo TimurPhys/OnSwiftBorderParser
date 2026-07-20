@@ -7,25 +7,28 @@ from datetime import datetime
 import re
 from bot.view.kb import *
 import config.config as cfg
+from db.db import save_user_filter
 
 form_router = Router()
+
 
 class SearchPreferences(StatesGroup):
     waiting_for_border = State()
     waiting_for_date = State()
     waiting_for_time = State()
-
+    waiting_for_number = State()
 
 
 # 2. Стартуем опрос по команде /set_filter
-@form_router.message(Command("set_filter"))
-async def class_start_filter(message: Message, state: FSMContext):
+@form_router.callback_query(F.data == "set_filter")
+async def class_start_filter(callback: CallbackQuery, state: FSMContext):
     inline_kb_borders = get_inline_borders_kb()
-    await message.answer(
-        "📝 Настраиваем фильтр для ядерного алерта.\n\nКакая **граница** интересует?",
+    await callback.message.answer(
+        "📝 Настраиваем фильтр для звонков.\n\nКакая **граница** интересует? (можно выбрать несколько)",
         reply_markup=inline_kb_borders.as_markup(),
     )
     await state.set_state(SearchPreferences.waiting_for_border)
+    await callback.answer()
 
 
 # 3. Ловим границу
@@ -157,35 +160,48 @@ async def ask_for_time(message: Message, state: FSMContext):
     await state.set_state(SearchPreferences.waiting_for_time)
 
 
-@form_router.callback_query(
-    SearchPreferences.waiting_for_time, F.data.startswith("time_")
-)
-async def process_time(callback: CallbackQuery, state: FSMContext):
+@form_router.callback_query(SearchPreferences.waiting_for_time)
+async def process_number(callback: CallbackQuery, state: FSMContext):
     time_val = callback.data.split("_")[1]
     await state.update_data(time=time_val)
-
-    user_data = await state.get_data()
-    await state.clear()
-
-    # Записываем в наш глобальный фильтр
-    cfg.USER_FILTERS[callback.from_user.id] = {
-        "borders": user_data["borders"],
-        "date_start": user_data["date_start"],
-        "date_end": user_data["date_end"],
-        "time": user_data["time"],
-    }
-
-    print(cfg.USER_FILTERS)
-
-    borders_str = ", ".join([cfg.border_names.get(b) for b in user_data["borders"]])
-
-    # Убираем кнопки и пишем финальный статус
     await callback.message.edit_text(
-        f"✅ **Фильтр успешно активирован!**\n\n"
-        f"📍 Пункты: {borders_str}\n"
-        f"📅 Дата: {user_data['date_start']} по {user_data['date_end']}\n"
-        f"🕒 Время суток: {user_data['time']}\n\n"
-        f"Если парсер найдет этот слот, бот вам позвонит!"
+        text="Пожалуйста введите ваш номер телефона с кодом страны. Пример: +37112347817. Пожалуйста, проверьте дважды проверьте подлинность написания."
     )
-    # Обязательно отвечаем на callback, чтобы у пользователя в ТГ перестала крутиться анимация на кнопке
+    await state.set_state(SearchPreferences.waiting_for_number)
     await callback.answer()
+
+
+@form_router.message(SearchPreferences.waiting_for_number)
+async def process_number(message: Message, state: FSMContext):
+    user_text = message.text
+    if user_text[0] == "+" and user_text[1:].isdigit():
+        number = user_text[1:]
+        await state.update_data(number=number)
+        user_data = await state.get_data()
+        await message.answer(text="Ваш номер телефона успешно принят.")
+        await state.clear()
+
+        filter = {
+            "borders": user_data["borders"],
+            "date_start": user_data["date_start"],
+            "date_end": user_data["date_end"],
+            "time": user_data["time"],
+            "number": user_data["number"],
+        }
+        await save_user_filter(user_id=int(message.from_user.id), filter=filter)
+        print(filter)
+
+        borders_str = ", ".join([cfg.border_names.get(b) for b in user_data["borders"]])
+        # Убираем кнопки и пишем финальный статус
+        await message.answer(
+            f"✅ **Фильтр успешно активирован!**\n\n"
+            f"📍 Пункты: {borders_str}\n"
+            f"📅 Дата: {str(user_data['date_start']) + ' по ' + str(user_data['date_end']) if user_data['date_start'] != 'any' else 'любая'}\n"
+            f"🕒 Время суток: {cfg.trans[user_data['time']]}\n"
+            f"📞 Номер телефона: +{user_data['number']}\n\n"
+            f"Если парсер найдет этот слот, бот вам позвонит!"
+        )
+    else:
+        await message.answer(
+            text="Неправильный формат написания. Пример: +37112347817, где +371 - код страны, а 12347817 - номер телефона."
+        )

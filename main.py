@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from aiogram import Bot, Dispatcher
 
 from aiohttp import web
@@ -6,17 +7,17 @@ from aiohttp import web
 from bot.bot import router
 from bot.form import form_router
 from bot.admin_router import admin_router
-
 from bot.view.commands import set_main_menu
+
 import config.config as config
-
 from db.db import init_db
-
 from jobs.webhook import stripe_webhook
 
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
+logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 
 async def main():
     print("Запуск...")

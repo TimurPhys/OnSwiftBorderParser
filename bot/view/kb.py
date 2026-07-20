@@ -65,16 +65,16 @@ def get_inline_plans(type: int, user_id: int):
     return builder
 
 
-def get_user_interface(user: dict):
+def get_user_interface(user: dict, user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="Статистика", callback_data="check")
     builder.button(text="Помощь (Инструкция)", callback_data="help")
-    last_payment_date = user["last_payment_date"]
-    if user["user_id"] == ADMIN_ID:
+    if not user["exists"] and user_id == ADMIN_ID:
         start_text = f"Здравствуйте, администратор. Предоставляю вам полный контроль над ботом и мониторингом."
         builder.button(text="Настроить фильтр", callback_data="set_filter")
         builder.button(text="Панель админа", callback_data="admin_panel")
     else:
+        last_payment_date = user["last_payment_date"]
         if user["is_trial"]:
             end_of_subscription = datetime.strftime(
                 datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")

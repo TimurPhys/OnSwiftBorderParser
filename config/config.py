@@ -18,6 +18,7 @@ VONAGE_VIRTUAL_NUMBER = os.getenv("VONAGE_VIRTUAL_NUMBER")
 DB_NAME = os.getenv("DB_NAME")
 
 border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
+trans = {"morning": "Утро", "day": "День", "night": "Вечер/ночь", "any": "Любое"}
 # --- КОНСТАНТЫ ----
 
 # Глобальные переменные

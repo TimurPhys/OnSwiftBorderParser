@@ -13,7 +13,18 @@ async def init_db():
                 is_paid INTEGER DEFAULT 0,  
                 has_dlc INTEGER DEFAULT 0,
                 last_payment_date TEXT
-            )
+            );
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_filters (
+                user_id INTEGER PRIMARY KEY,
+                borders TEXT NOT NULL,          -- ID границ через запятую, например: "1,2"
+                date_start TEXT DEFAULT 'any',  -- Строка "any" или дата в формате "YYYY-MM-DD"
+                date_end TEXT DEFAULT 'any',    -- Строка "any" или дата в формате "YYYY-MM-DD"
+                time_slot TEXT DEFAULT 'any',   -- "any", "morning", "day", "night"
+                number TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+            );
         """)
         await db.commit()
     print("База данных успешно инициализирована (Async).")
@@ -149,4 +160,73 @@ async def get_all_valid_users_ids():
         SELECT user_id FROM users WHERE (is_trial == 1 OR is_paid == 1)
     """)
         row = await cursor.fetchall()
-        return row
+    return row
+
+
+async def save_user_filter(user_id: int, filter: dict):
+    async with aiosqlite.connect(DB_NAME) as db:
+        # Превращаем список ['1', '2'] в строку "1,2" для хранения в БД
+        borders_str = ",".join(map(str, filter["borders"]))
+
+        await db.execute(
+            """
+        INSERT OR REPLACE INTO user_filters (user_id, borders, date_start, date_end, time_slot, number)
+        VALUES (?, ?, ?, ?, ?, ?);
+        """,
+            (
+                user_id,
+                borders_str,
+                str(filter["date_start"]),
+                str(filter["date_end"]),
+                filter["time"],
+                filter["number"],
+            ),
+        )
+
+        await db.commit()
+
+
+async def get_user_filters(user_ids) -> dict | None:
+    user_filters = {}
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.cursor() as cursor:
+            # Включаем Row-фабрику, чтобы обращаться по именам колонок
+            cursor.row_factory = aiosqlite.Row
+
+            placeholders = ", ".join(["?"] * len(user_ids))
+            query = f"SELECT * FROM user_filters WHERE user_id IN ({placeholders});"
+            await cursor.execute(query, tuple(user_ids))
+
+            rows = await cursor.fetchall()
+
+            for row in rows:
+                u_id = row["user_id"]
+                # Обработка границ (парсинг строки в список чисел)
+                borders_raw = row["borders"]
+                borders = (
+                    [int(x) for x in borders_raw.split(",") if x] if borders_raw else []
+                )
+
+                d_start = row["date_start"]
+                d_end = row["date_end"]
+
+                # Парсинг дат, если они заданы конкретным диапазоном
+                if d_start != "any" and d_start is not None:
+                    try:
+                        d_start = datetime.strptime(d_start, "%Y-%m-%d").date()
+                        d_end = datetime.strptime(d_end, "%Y-%m-%d").date()
+                    except ValueError:
+                        try:
+                            d_start = datetime.strptime(d_start, "%d.%m.%Y").date()
+                            d_end = datetime.strptime(d_end, "%d.%m.%Y").date()
+                        except ValueError:
+                            # Фалбэк на случай, если в базе совсем битая дата
+                            d_start, d_end = "any", "any"
+                user_filters[u_id] = {
+                    "borders": borders,
+                    "date_start": d_start,
+                    "date_end": d_end,
+                    "time": row["time_slot"],
+                    "number": row["number"],
+                }
+    return user_filters

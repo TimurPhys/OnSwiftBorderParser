@@ -5,7 +5,6 @@ from aiohttp import web
 from aiogram import Bot
 from db.db import just_bought_subscription
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def stripe_webhook(request):
