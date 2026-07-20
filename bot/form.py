@@ -6,18 +6,15 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from datetime import datetime
 import re
 from bot.view.kb import *
-from config.config import *
+import config.config as cfg
 
 form_router = Router()
-
 
 class SearchPreferences(StatesGroup):
     waiting_for_border = State()
     waiting_for_date = State()
     waiting_for_time = State()
 
-
-border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
 
 
 # 2. Стартуем опрос по команде /set_filter
@@ -45,12 +42,12 @@ async def process_border(callback: CallbackQuery, state: FSMContext):
             )
             return
 
-        names_str = ", ".join([border_names.get(b) for b in chosen_borders])
+        names_str = ", ".join([cfg.border_names.get(b) for b in chosen_borders])
 
         builder = InlineKeyboardBuilder()
         builder.button(text="📅 Искать на любую дату", callback_data="date_any")
         await callback.message.edit_text(
-            f"📍 Выбраны пункты: **{border_names.get(names_str)}**\n\n"
+            f"📍 Выбраны пункты: **{cfg.border_names.get(names_str)}**\n\n"
             f"Укажи период дат, в который ты готов ехать.\n"
             f"Напиши его текстом в формате: `ДД.ММ - ДД.ММ`\n\n"
             f"ℹ️ *Пример: 05.07 - 05.08* (или просто нажмите кнопку ниже, если дата не важна)",
@@ -74,7 +71,7 @@ async def process_border(callback: CallbackQuery, state: FSMContext):
     await state.update_data(borders=chosen_borders)
 
     builder = InlineKeyboardBuilder()
-    for b_id, b_name in border_names.items():
+    for b_id, b_name in cfg.border_names.items():
         if b_id not in chosen_borders:
             builder.button(text=f"📍 {b_name}", callback_data=f"border_{b_id}")
 
@@ -83,7 +80,7 @@ async def process_border(callback: CallbackQuery, state: FSMContext):
         InlineKeyboardButton(text="➡️ Продолжить", callback_data="border_continue")
     )
 
-    names_str = ", ".join([border_names.get(b) for b in chosen_borders])
+    names_str = ", ".join([cfg.border_names.get(b) for b in chosen_borders])
 
     await callback.message.edit_text(
         f"📝 Уже выбрано: **{names_str}**\n\n"
@@ -171,16 +168,16 @@ async def process_time(callback: CallbackQuery, state: FSMContext):
     await state.clear()
 
     # Записываем в наш глобальный фильтр
-    USER_FILTERS[callback.from_user.id] = {
+    cfg.USER_FILTERS[callback.from_user.id] = {
         "borders": user_data["borders"],
         "date_start": user_data["date_start"],
         "date_end": user_data["date_end"],
         "time": user_data["time"],
     }
 
-    print(USER_FILTERS)
+    print(cfg.USER_FILTERS)
 
-    borders_str = ", ".join([border_names.get(b) for b in user_data["borders"]])
+    borders_str = ", ".join([cfg.border_names.get(b) for b in user_data["borders"]])
 
     # Убираем кнопки и пишем финальный статус
     await callback.message.edit_text(

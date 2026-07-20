@@ -88,7 +88,6 @@ async def run_async_parser(category="B", border_id=3):
         # Сделаем тестовый проход по тем же шагам (раз в 4 дня)
         data = await send_request(parser)
         monthly_data.update({border_id: data})
-
     else:
         for i in range(1, 4):
             init_success = await parser.init_session(category=category, border_id=i)

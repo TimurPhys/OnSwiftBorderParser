@@ -5,8 +5,8 @@ from aiohttp import web
 
 from bot.bot import router
 from bot.form import form_router
+from bot.admin_router import admin_router
 
-from bot.payment import payment_router
 from bot.view.commands import set_main_menu
 import config.config as config
 
@@ -32,10 +32,10 @@ async def main():
     await site.start()
     print("🌐 Веб-сервер Stripe Webhook запущен на порту 8080.")
 
-    # await set_main_menu(bot)
     dp.include_router(router)
     dp.include_router(form_router)
-    dp.include_router(payment_router)
+    dp.include_router(admin_router)
+    await set_main_menu(bot)
     await dp.start_polling(bot)
 
 

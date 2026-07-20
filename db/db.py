@@ -100,6 +100,7 @@ async def has_purchased_calls(user_id: int):
 # 2. Действителен ли у человека пробный период
 # 3. Есть ли человека возможность получать звонки
 
+
 # Просто получить объект пользователя (если существует)
 async def get_user_instance(user_id: int) -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
@@ -110,12 +111,42 @@ async def get_user_instance(user_id: int) -> dict:
         row = await cursor.fetchone()
         if row is None:
             return {"exists": False}
-        
+
         return {
             "exists": True,
+            "user_id": user_id,
             "is_trial": bool(row[0]),
             "is_paid": bool(row[1]),
             "has_dlc": bool(row[2]),
             "last_payment_date": row[3],
         }
-    
+
+
+async def get_user_stats() -> dict:
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.cursor() as cursor:
+            cursor.row_factory = aiosqlite.Row
+
+            await cursor.execute("""
+            SELECT 
+                SUM(CASE WHEN is_trial = 1 THEN 1 ELSE 0 END) AS total_trial,
+                SUM(CASE WHEN is_paid = 1 THEN 1 ELSE 0 END) AS total_paid,
+                SUM(CASE WHEN is_paid = 1 AND has_dlc = 1 THEN 1 ELSE 0 END) AS total_paid_with_dlc
+            FROM 
+                users;
+            """)
+            row = await cursor.fetchone()
+            trial = row["total_trial"] or 0
+            paid = row["total_paid"] or 0
+            have_dlc = row["total_paid_with_dlc"] or 0
+
+            return {"trial": trial, "paid": paid, "have_dlc": have_dlc}
+
+
+async def get_all_valid_users_ids():
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("""
+        SELECT user_id FROM users WHERE (is_trial == 1 OR is_paid == 1)
+    """)
+        row = await cursor.fetchall()
+        return row

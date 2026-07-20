@@ -6,30 +6,31 @@ from datetime import datetime, timedelta
 
 from jobs.async_parser import run_async_parser
 
-from config.config import *
+import config.config as cfg
+
 
 # --- АСИНХРОННЫЙ ГЛАВНЫЙ ЦИКЛ ПАРСИНГА ---
 async def monitoring_loop(category, border_id, bot: Bot):
-    global monitoring_counter, last_monitoring_date, first_monitoring_date, border_names
     while True:
         try:
             print("--- Фоновый запуск проверки ---")
             data = await run_async_parser(category=category, border_id=border_id)
             if data:
-                last_monitoring_date = datetime.now()
-                if last_monitoring_date - first_monitoring_date >= timedelta(days=1):
-                    first_monitoring_date = datetime.now()
-                    monitoring_counter = 0
-                monitoring_counter += 1
+                cfg.last_monitoring_date = datetime.now()
+                if cfg.last_monitoring_date - cfg.first_monitoring_date >= timedelta(
+                    days=1
+                ):
+                    cfg.first_monitoring_date = datetime.now()
+                    cfg.monitoring_counter = 0
+                cfg.monitoring_counter += 1
                 print(f"Итоговый словарь собранных данных за месяц:\n{data}")
-                # await bot.send_message(ADMIN_ID, "Были найдены новые данные!")
                 matched_slots = []
                 other_slots = []
 
                 # 1. Проходим по ID границ (ключи 1, 2 и т.д.)
                 for b_id, dates_dict in data.items():
                     # Получаем красивое название границы или пишем просто "КПП №..."
-                    border_name = border_names.get(int(b_id))
+                    border_name = cfg.border_names.get(int(b_id))
 
                     # 2. Проходим по датам внутри этой границы
                     for date_str, slots_list in dates_dict.items():
@@ -42,8 +43,8 @@ async def monitoring_loop(category, border_id, bot: Bot):
                                 slot_line = f"📍 **{border_name}** | 📅 {date_str} в ⏰ {time_slot}"
 
                                 is_match = False  # Флаг, подошел ли конкретный слот
-                                if ADMIN_ID in USER_FILTERS.keys():
-                                    user_pref = USER_FILTERS[ADMIN_ID]
+                                if cfg.ADMIN_ID in cfg.USER_FILTERS.keys():
+                                    user_pref = cfg.USER_FILTERS[cfg.ADMIN_ID]
 
                                     border_match = False
                                     for border_id in user_pref["borders"]:
@@ -106,7 +107,9 @@ async def monitoring_loop(category, border_id, bot: Bot):
                         f"{slots_text}\n\n"
                         f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
                     )
-                    await bot.send_message(ADMIN_ID, message_text, parse_mode="HTML")
+                    await bot.send_message(
+                        cfg.ADMIN_ID, message_text, parse_mode="HTML"
+                    )
 
                 elif other_slots:
                     # Объединяем все найденные слоты через перенос строки
@@ -116,7 +119,9 @@ async def monitoring_loop(category, border_id, bot: Bot):
                         f"{slots_text}\n\n"
                         f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
                     )
-                    await bot.send_message(ADMIN_ID, message_text, parse_mode="HTML")
+                    await bot.send_message(
+                        cfg.ADMIN_ID, message_text, parse_mode="HTML"
+                    )
                 else:
                     print("Проверка завершена успешно: Свободных мест нет.")
 
@@ -125,6 +130,6 @@ async def monitoring_loop(category, border_id, bot: Bot):
             break
         except Exception as e:
             print(f"Произошла ошибка парсинга {e}")
-            await bot.send_message(ADMIN_ID, f"Произошла ошибка парсинга {e}")
+            await bot.send_message(cfg.ADMIN_ID, f"Произошла ошибка парсинга {e}")
 
         await asyncio.sleep(300)  # Спим 5 минут
