@@ -159,8 +159,8 @@ async def get_all_valid_users_ids():
         cursor = await db.execute("""
         SELECT user_id FROM users WHERE (is_trial == 1 OR is_paid == 1)
     """)
-        row = await cursor.fetchall()
-    return row
+        rows = await cursor.fetchall()
+    return [row[0] for row in rows]
 
 
 async def save_user_filter(user_id: int, filter: dict):
@@ -193,9 +193,15 @@ async def get_user_filters(user_ids) -> dict | None:
             # Включаем Row-фабрику, чтобы обращаться по именам колонок
             cursor.row_factory = aiosqlite.Row
 
-            placeholders = ", ".join(["?"] * len(user_ids))
-            query = f"SELECT * FROM user_filters WHERE user_id IN ({placeholders});"
-            await cursor.execute(query, tuple(user_ids))
+            if len(user_ids) == 1:
+                query = "SELECT * FROM user_filters WHERE user_id = ?;"
+                await cursor.execute(query, (user_ids[0],))
+
+            # Если проверяем ПАЧКУ пользователей (в цикле мониторинга)
+            else:
+                placeholders = ", ".join(["?"] * len(user_ids))
+                query = f"SELECT * FROM user_filters WHERE user_id IN ({placeholders});"
+                await cursor.execute(query, list(user_ids))
 
             rows = await cursor.fetchall()
 
@@ -229,4 +235,4 @@ async def get_user_filters(user_ids) -> dict | None:
                     "time": row["time_slot"],
                     "number": row["number"],
                 }
-    return user_filters
+            return user_filters

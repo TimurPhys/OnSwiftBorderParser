@@ -27,14 +27,15 @@ async def monitoring_loop(category, border_id, bot: Bot):
                 # На этом моменте получили готовые данные, теперь надо их разослать по пользователям
                 found_valid_users_ids = await get_all_valid_users_ids()
                 valid_users_ids = list(set(found_valid_users_ids + [cfg.ADMIN_ID]))
+                print(valid_users_ids)
 
                 user_filters = await get_user_filters(valid_users_ids)
-                print(valid_users_ids)
+                print(user_filters)
 
                 for user_id in valid_users_ids:
                     matched_slots = []
                     other_slots = []
-                    user_filter = user_filters[user_id]
+                    user_filter = user_filters.get(user_id)
 
                     # 1. Проходим по ID границ (ключи 1, 2 и т.д.)
                     for b_id, dates_dict in data.items():

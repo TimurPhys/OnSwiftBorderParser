@@ -68,7 +68,7 @@ def get_inline_plans(type: int, user_id: int):
 def get_user_interface(user: dict, user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="Статистика", callback_data="check")
-    builder.button(text="Помощь (Инструкция)", callback_data="help")
+    builder.button(text="Помощь (Настройки)", callback_data="help")
     if not user["exists"] and user_id == ADMIN_ID:
         start_text = f"Здравствуйте, администратор. Предоставляю вам полный контроль над ботом и мониторингом."
         builder.button(text="Настроить фильтр", callback_data="set_filter")
@@ -134,6 +134,12 @@ def get_inline_buttons():
     builder = InlineKeyboardBuilder()
     builder.button(text="Да", callback_data="yes_confirm")
     builder.button(text="Нет", callback_data="no_deny")
+    return builder
+
+def get_settings_buttons():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Тестовый звонок", callback_data="test_call")
+    builder.button(text="Остановить подписку", callback_data="stop_subscription")
     return builder
 
 

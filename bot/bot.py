@@ -4,12 +4,21 @@ from aiogram.types import (
     CallbackQuery,
 )
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.filters import StateFilter
+from datetime import datetime, timedelta
 import config.config as cfg
 from bot.view.kb import *
 
 from db.db import get_user_instance, start_trial_subscription, get_user_filters
+from jobs.caller import send_voice_alert
 
 router = Router()
+
+
+class SettingsPreferences(StatesGroup):
+    processing_settings = State()
+    waiting_for_number = State()
 
 
 async def delete_last_message(old_msg_id, user_id, bot: Bot, state: FSMContext):
@@ -66,7 +75,9 @@ async def ask_to_start_trial(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "yes_confirm")
+@router.callback_query(
+    F.data == "yes_confirm", ~StateFilter(SettingsPreferences.processing_settings)
+)
 async def start_trial(callback: CallbackQuery):
     user_id = int(callback.from_user.id)
     print(user_id)
@@ -81,8 +92,10 @@ async def start_trial(callback: CallbackQuery):
         await callback.answer(text=f"Произошла непредвиденная ошибка {e}")
 
 
-@router.callback_query(F.data == "no_deny")
-async def start_trial(callback: CallbackQuery):
+@router.callback_query(
+    F.data == "no_deny", ~StateFilter(SettingsPreferences.processing_settings)
+)
+async def deny_trial(callback: CallbackQuery):
     try:
         await callback.message.delete()
         await callback.answer()
@@ -160,3 +173,91 @@ async def check_monitorings(callback: CallbackQuery):
         )
 
     await callback.answer()
+
+
+@router.callback_query(F.data == "help")
+async def show_settings(callback: CallbackQuery, state: FSMContext):
+    text_message = (
+        f"Это окно настроек и помощи\n"
+        "Здесь можно:\n\n"
+        "1. Сделать тестовый звонок\n"
+        "2. Остановить подписку\n"
+    )
+    kb = get_settings_buttons()
+    await callback.message.answer(text=text_message, reply_markup=kb.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "test_call")
+async def test_call(callback: CallbackQuery, state: FSMContext):
+    # Делаем запрос в БД и смотрим оставляли ли человек свой номер телефона
+    user_id = int(callback.from_user.id)
+    user_filters = await get_user_filters([user_id])
+    if user_filters is not None:
+        number = user_filters["number"]
+        text_message = (
+            f"Указанный вами номер телефона это: +{number}\n."
+            "Если вы согласны, то сейчас вам позвонит неизвестный номер(обычно +44), произнесет фразу 'It's a test call from a bot' и сбросит трубку\n"
+            "Не бойтесь брать трубку, звонок автоматический и деньги за него не снимаются."
+        )
+        kb = get_inline_buttons()
+        await callback.message.answer(text=text_message, reply_markup=kb.as_markup())
+        await state.set_state(SettingsPreferences.processing_settings)
+    else:
+        await callback.message.answer(
+            text="Пожалуйста, введите свой номер телефона для проведения тестового звонка."
+        )
+        await state.set_state(SettingsPreferences.waiting_for_number)
+        await callback.answer()
+
+
+@router.message(StateFilter(SettingsPreferences.waiting_for_number))
+async def process_number(message: Message, state: FSMContext):
+    user_text = message.text
+    if user_text[0] == "+" and user_text[1:].isdigit():
+        number = user_text[1:]
+        await state.update_data(number=number)
+        text = (
+            f"Ваш номер телефона +{number} успешно принят. Если вы согласны, то сейчас вам позвонит неизвестный номер(обычно +44),"
+            "произнесет фразу 'It's a test call from a bot' и сбросит трубку\n"
+            "Не бойтесь брать трубку, звонок автоматический и деньги за него не снимаются."
+        )
+        kb = get_inline_buttons()
+        await message.answer(text=text, reply_markup=kb.as_markup())
+        await state.set_state(SettingsPreferences.processing_settings)
+    else:
+        await message.answer(
+            text="Неправильный формат написания. Пример: +37112347817, где +371 - код страны, а 12347817 - номер телефона."
+        )
+
+
+@router.callback_query(
+    F.data == "yes_confirm", StateFilter(SettingsPreferences.processing_settings)
+)
+async def process_call(callback: CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    number = user_data.get("number")
+    last_test_call_time = user_data.get("last_test_call_time")
+    if last_test_call_time is not None:
+        if datetime.now() >= last_test_call_time + timedelta(hours=2): # Можно сделать звонок, прошло 2 часа
+            await make_a_test_call(callback, state, number)
+        else:
+            await callback.message.edit_text("Извините, с прошлого тествого звонка должно пройти минимум 2 часа.")
+    else:
+        await make_a_test_call(callback, state, number)
+
+async def make_a_test_call(callback: CallbackQuery, state: FSMContext, number):
+    await callback.message.edit_text(text="Производим звонок.....")
+    # Делаем звонок 
+    await send_voice_alert("It's a test call from a bot", number)
+    await state.clear()
+
+    now = datetime.now()
+    await state.update_data(last_test_call_time=now)
+
+@router.callback_query(
+    F.data == "no_deny", StateFilter(SettingsPreferences.processing_settings)
+)
+async def process_call(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await state.clear()

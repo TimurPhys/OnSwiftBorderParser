@@ -17,7 +17,6 @@ bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
-logging.basicConfig(level=logging.INFO)
 
 async def main():
     print("Запуск...")
