@@ -1,18 +1,51 @@
 import asyncio
+import logging
+from datetime import datetime, timedelta
 from vonage import Auth, Vonage
 from vonage_voice import CreateCallRequest, Phone, ToPhone
+from db.db import get_user_last_call_date, update_user_last_call_date
+import config.config as cfg
 
-from config.config import VONAGE_APP_ID, VONAGE_PRIVATE_KEY, VONAGE_VIRTUAL_NUMBER
+logger = logging.getLogger(__name__)
 
 client = Vonage(
     Auth(
-        application_id=VONAGE_APP_ID,
-        private_key=VONAGE_PRIVATE_KEY,
+        application_id=cfg.VONAGE_APP_ID,
+        private_key=cfg.VONAGE_PRIVATE_KEY,
     )
 )
 
 
-async def send_voice_alert(message, voice_to_number):
+async def send_voice_alert(user_id, message, voice_to_number):
+    last_call_date = await get_user_last_call_date(user_id)
+
+    if last_call_date is not None:
+        last_call_date_dt = last_call_date.strptime("%Y-%m-%d %H:%M:%S")
+        if datetime.now() >= last_call_date_dt + timedelta(
+            hours=cfg.INTERVAL_BETWEEN_CALLS
+        ):  # Можно сделать звонок, прошло 2 часа
+            await update_user_last_call_date(user_id)
+            await send_call(
+                message=message,
+                number=voice_to_number,
+            )
+        else:
+            logging.info(
+                f"С прошлого звонка еще не прошло {cfg.INTERVAL_BETWEEN_CALLS} часа"
+            )
+            return "INTERVAL_NOT_REACHED"
+    else:
+        await send_call(
+            message=message,
+            number=voice_to_number,
+        )
+    if user_id != cfg.ADMIN_ID:
+        await update_user_last_call_date(user_id)
+    else:
+        logging.info("Производим звонок админу!!!")
+
+
+async def send_call(message, number):
     ncco_payload = [
         {
             "action": "talk",
@@ -27,8 +60,8 @@ async def send_voice_alert(message, voice_to_number):
             client.voice.create_call,
             CreateCallRequest(
                 ncco=ncco_payload,
-                to=[ToPhone(number=voice_to_number)],
-                from_=Phone(number=VONAGE_VIRTUAL_NUMBER),
+                to=[ToPhone(number=number)],
+                from_=Phone(number=cfg.VONAGE_VIRTUAL_NUMBER),
             ),
         )
         if hasattr(response, "status"):

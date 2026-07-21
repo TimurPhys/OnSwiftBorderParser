@@ -4,7 +4,8 @@ from aiogram import Bot
 from datetime import datetime, timedelta
 from jobs.async_parser import run_async_parser
 import config.config as cfg
-from db.db import get_all_valid_users_ids, get_user_filters
+from db.db import get_all_valid_users_ids, get_user_filters, update_user_last_call_date
+from jobs.caller import send_voice_alert
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,6 @@ async def monitoring_loop(category, border_id, bot: Bot):
                 # На этом моменте получили готовые данные, теперь надо их разослать по пользователям
                 found_valid_users_ids = await get_all_valid_users_ids()
                 valid_users_ids = list(set(found_valid_users_ids + [cfg.ADMIN_ID]))
-                print(valid_users_ids)
 
                 user_filters = await get_user_filters(valid_users_ids)
                 print(user_filters)
@@ -121,6 +121,14 @@ async def monitoring_loop(category, border_id, bot: Bot):
                             f"Переходи <a href='https://www.eestipiir.ee/yphis/index.action'>на сайт границы</a> и бронируй!"
                         )
                         await bot.send_message(user_id, message_text, parse_mode="HTML")
+                        user_filter = user_filters.get(user_id)
+                        number = user_filter.get("number")
+
+                        await send_voice_alert(
+                            user_id=user_id,
+                            message="This is an automated message. A perfect match for your filters has been found!",
+                            voice_to_number=number,
+                        )
 
                     elif other_slots:
                         # Объединяем все найденные слоты через перенос строки

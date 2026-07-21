@@ -12,7 +12,10 @@ async def init_db():
                 is_trial INTEGER DEFAULT 0,
                 is_paid INTEGER DEFAULT 0,  
                 has_dlc INTEGER DEFAULT 0,
-                last_payment_date TEXT
+                last_payment_date TEXT,
+                days_left INTEGER NOT NULL,
+                has_stopped INTEGER DEFAULT 0,
+                last_call_date TEXT DEFAULT NULL
             );
         """)
         await db.execute("""
@@ -36,8 +39,8 @@ async def start_trial_subscription(user_id: int):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await db.execute(
             """
-            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date)
-            VALUES (?, 1, 0, 0, ?)
+            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped)
+            VALUES (?, 1, 0, 0, ?, 7, 0)
         """,
             (user_id, now_str),
         )
@@ -57,13 +60,15 @@ async def just_bought_subscription(user_id: int):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await db.execute(
             """
-            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date)
-            VALUES (?, 0, 1, 0, ?)
+            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped)
+            VALUES (?, 0, 1, 0, ?, 30, 0)
             ON CONFLICT(user_id) DO UPDATE SET
                         is_trial = 0,
                         is_paid = 1,
                         has_dlc = 0,
-                        last_payment_date = ?
+                        last_payment_date = ?,
+                        days_left = 30,
+                        has_stopped = 0
         """,
             (user_id, now_str, now_str),
         )
@@ -77,13 +82,15 @@ async def bought_full_package(user_id: int):
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await db.execute(
             """
-            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date)
-            VALUES (?, 0, 1, 1, ?)
+            INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped)
+            VALUES (?, 0, 1, 1, ?, 30, 0)
             ON CONFLICT(user_id) DO UPDATE SET
                         is_trial = 0,
                         is_paid = 1,
                         has_dlc = 1,
-                        last_payment_date = ?
+                        last_payment_date = ?,
+                        days_left = 30,
+                        has_stopped = 0
         """,
             (user_id, now_str, now_str),
         )
@@ -116,7 +123,7 @@ async def has_purchased_calls(user_id: int):
 async def get_user_instance(user_id: int) -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
-            "SELECT is_trial, is_paid, has_dlc, last_payment_date FROM users WHERE user_id = ?",
+            "SELECT is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped, last_call_date FROM users WHERE user_id = ?",
             (user_id,),
         )
         row = await cursor.fetchone()
@@ -130,7 +137,33 @@ async def get_user_instance(user_id: int) -> dict:
             "is_paid": bool(row[1]),
             "has_dlc": bool(row[2]),
             "last_payment_date": row[3],
+            "days_left": int(row[4]),
+            "has_stopped": bool(row[5]),
+            "last_call_date": row[6],
         }
+
+
+async def get_user_last_call_date(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("""
+            SELECT last_call_date FROM users WHERE user_id = ?
+        """, (user_id, ))
+        row = await cursor.fetchone()
+        return row
+
+
+async def update_user_last_call_date(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await db.execute(
+            """
+        UPDATE users
+            SET last_call_date = ?
+        WHERE user_id = ?;
+        """,
+            (now_str, user_id),
+        )
+        await db.commit()
 
 
 async def get_user_stats() -> dict:
@@ -152,6 +185,36 @@ async def get_user_stats() -> dict:
             have_dlc = row["total_paid_with_dlc"] or 0
 
             return {"trial": trial, "paid": paid, "have_dlc": have_dlc}
+
+
+async def stop_subscription(user_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            """
+            UPDATE users
+            SET 
+                days_left = MAX(0, days_left - CAST(julianday('now') - julianday(last_payment_date) AS INTEGER)),
+                has_stopped = 1
+            WHERE user_id = ?;
+            """,
+            (user_id,),
+        )
+        await db.commit()
+
+
+async def resume_subscription(user_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await db.execute(
+            """
+            UPDATE users
+                has_stopped = 0,
+                last_payment_date = ?
+            WHERE user_id = ?;
+            """,
+            (user_id, now_str),
+        )
+        await db.commit()
 
 
 async def get_all_valid_users_ids():

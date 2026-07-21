@@ -10,15 +10,26 @@ from datetime import datetime, timedelta
 import config.config as cfg
 from bot.view.kb import *
 
-from db.db import get_user_instance, start_trial_subscription, get_user_filters
+from db.db import (
+    get_user_instance,
+    start_trial_subscription,
+    get_user_filters,
+)
 from jobs.caller import send_voice_alert
 
 router = Router()
 
 
+class MenuStates(StatesGroup):
+    waiting_to_pay = State()
+    is_configuring_filter = State()
+    in_settings = State()
+
+
 class SettingsPreferences(StatesGroup):
-    processing_settings = State()
     waiting_for_number = State()
+    waiting_to_call = State()
+    waiting_to_stop_subscription = State()
 
 
 async def delete_last_message(old_msg_id, user_id, bot: Bot, state: FSMContext):
@@ -43,8 +54,9 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
     await delete_last_message(old_msg_id, user_id, bot, state)
 
     user = await get_user_instance(user_id)
+    await state.clear()
 
-    if not user["exists"] and user_id != ADMIN_ID:
+    if not user["exists"] and user_id != cfg.ADMIN_ID:
         welcome_text = (
             "👋 **Привет! Я твой личный бот-информатор по границам Эстония-Россия**\n\n"
             "Я собираю информацию о свободных местах каждые 5 минут с сайта GoSwift "
@@ -58,7 +70,6 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
             text=welcome_text, reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
         await state.update_data(last_msg_id=sent_message.message_id)
-
     # Пользователь уже существует и записан
     else:
         kb, start_text = get_user_interface(user, user_id)
@@ -66,19 +77,18 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
 
 
 @router.callback_query(F.data == "trial")
-async def ask_to_start_trial(callback: CallbackQuery):
+async def ask_to_start_trial(callback: CallbackQuery, state: FSMContext):
     kb = get_inline_buttons()
     await callback.message.edit_text(
         text="Вы уверены, что хотите начать пробный период?",
         reply_markup=kb.as_markup(),
     )
     await callback.answer()
+    await state.set_state(MenuStates.waiting_to_pay)
 
 
-@router.callback_query(
-    F.data == "yes_confirm", ~StateFilter(SettingsPreferences.processing_settings)
-)
-async def start_trial(callback: CallbackQuery):
+@router.callback_query(F.data == "yes_confirm", MenuStates.waiting_to_pay)
+async def start_trial(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.from_user.id)
     print(user_id)
     try:
@@ -87,23 +97,24 @@ async def start_trial(callback: CallbackQuery):
             text="Пробный период подписки успешно начат. Теперь вы сможете сразу видеть свободные места на границе, если они появляются."
         )
         await callback.answer()
+        await state.clear()
     except Exception as e:
         print(f"Произошла непредвиденная ошибка {e}")
         await callback.answer(text=f"Произошла непредвиденная ошибка {e}")
 
 
-@router.callback_query(
-    F.data == "no_deny", ~StateFilter(SettingsPreferences.processing_settings)
-)
-async def deny_trial(callback: CallbackQuery):
+@router.callback_query(F.data == "no_deny", MenuStates.waiting_to_pay)
+async def deny_trial(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.message.delete()
         await callback.answer()
+        await state.clear()
     except Exception as e:
         print(f"Произошла непредвиденная ошибка {e}")
         await callback.answer(text=f"Произошла непредвиденная ошибка {e}")
 
 
+# Тарифы
 @router.callback_query(F.data.startswith("list_plans"))
 async def list_plans(callback: CallbackQuery, state: FSMContext):
     plans = int(callback.data.split("_")[-1])
@@ -185,16 +196,19 @@ async def show_settings(callback: CallbackQuery, state: FSMContext):
     )
     kb = get_settings_buttons()
     await callback.message.answer(text=text_message, reply_markup=kb.as_markup())
+    await state.set_state(MenuStates.in_settings)
     await callback.answer()
 
 
-@router.callback_query(F.data == "test_call")
+@router.callback_query(F.data == "test_call", MenuStates.in_settings)
 async def test_call(callback: CallbackQuery, state: FSMContext):
     # Делаем запрос в БД и смотрим оставляли ли человек свой номер телефона
     user_id = int(callback.from_user.id)
     user_filters = await get_user_filters([user_id])
-    if user_filters is not None:
-        number = user_filters["number"]
+    user_filter = user_filters.get(user_id)
+
+    if user_filter and user_filter.get("number"):
+        number = user_filter["number"]
         text_message = (
             f"Указанный вами номер телефона это: +{number}\n."
             "Если вы согласны, то сейчас вам позвонит неизвестный номер(обычно +44), произнесет фразу 'It's a test call from a bot' и сбросит трубку\n"
@@ -202,16 +216,17 @@ async def test_call(callback: CallbackQuery, state: FSMContext):
         )
         kb = get_inline_buttons()
         await callback.message.answer(text=text_message, reply_markup=kb.as_markup())
-        await state.set_state(SettingsPreferences.processing_settings)
+        await state.update_data(number=number)
+        await state.set_state(SettingsPreferences.waiting_to_call)
     else:
         await callback.message.answer(
             text="Пожалуйста, введите свой номер телефона для проведения тестового звонка."
         )
         await state.set_state(SettingsPreferences.waiting_for_number)
-        await callback.answer()
+    await callback.answer()
 
 
-@router.message(StateFilter(SettingsPreferences.waiting_for_number))
+@router.message(SettingsPreferences.waiting_for_number)
 async def process_number(message: Message, state: FSMContext):
     user_text = message.text
     if user_text[0] == "+" and user_text[1:].isdigit():
@@ -224,40 +239,89 @@ async def process_number(message: Message, state: FSMContext):
         )
         kb = get_inline_buttons()
         await message.answer(text=text, reply_markup=kb.as_markup())
-        await state.set_state(SettingsPreferences.processing_settings)
+        await state.set_state(SettingsPreferences.waiting_to_call)
     else:
         await message.answer(
             text="Неправильный формат написания. Пример: +37112347817, где +371 - код страны, а 12347817 - номер телефона."
         )
 
 
-@router.callback_query(
-    F.data == "yes_confirm", StateFilter(SettingsPreferences.processing_settings)
-)
+@router.callback_query(F.data == "yes_confirm", SettingsPreferences.waiting_to_call)
 async def process_call(callback: CallbackQuery, state: FSMContext):
+    user_id = int(callback.from_user.id)
     user_data = await state.get_data()
     number = user_data.get("number")
-    last_test_call_time = user_data.get("last_test_call_time")
-    if last_test_call_time is not None:
-        if datetime.now() >= last_test_call_time + timedelta(hours=2): # Можно сделать звонок, прошло 2 часа
-            await make_a_test_call(callback, state, number)
-        else:
-            await callback.message.edit_text("Извините, с прошлого тествого звонка должно пройти минимум 2 часа.")
+    res = await send_voice_alert(
+        user_id=user_id,
+        message="It's a test call from a bot",
+        voice_to_number=number,
+    )
+    if res != "INTERVAL_NOT_REACHED":
+        await callback.message.edit_text(text="Производим звонок.....")
     else:
-        await make_a_test_call(callback, state, number)
-
-async def make_a_test_call(callback: CallbackQuery, state: FSMContext, number):
-    await callback.message.edit_text(text="Производим звонок.....")
-    # Делаем звонок 
-    await send_voice_alert("It's a test call from a bot", number)
+        await callback.message.edit_text(
+            text="С последнего тествого звонка прошло слишком мало времени."
+        )
     await state.clear()
 
-    now = datetime.now()
-    await state.update_data(last_test_call_time=now)
 
-@router.callback_query(
-    F.data == "no_deny", StateFilter(SettingsPreferences.processing_settings)
-)
-async def process_call(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "no_deny", SettingsPreferences.waiting_to_call)
+async def process_call_deny(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await state.clear()
+
+
+@router.callback_query(F.data == "stop_subscription", MenuStates.in_settings)
+async def ask_to_stop_subscription(callback: CallbackQuery, state: FSMContext):
+    kb = get_inline_buttons()
+    user_id = int(callback.from_user.id)
+    user = await get_user_instance(user_id)
+    last_payment_str = user.get("last_payment_date")
+    days_left = user.get("days_left", 0)
+    if last_payment_str:
+        # 1. Превращаем строку из БД в объект datetime
+        last_payment_date = datetime.strptime(last_payment_str, "%Y-%m-%d %H:%M:%S")
+
+        # 2. Считаем, сколько полных дней прошло с момента запуска/оплаты
+        days_passed = (datetime.now() - last_payment_date).days
+
+        # 3. Вычитываем прошедшие дни из доступного остатка
+        real_days_left = max(0, days_left - days_passed)
+    else:
+        real_days_left = days_left
+
+    text = f"Вы уверены, что хотите остановить подписку/пробный период? У вас осталось {real_days_left} дней."
+    await callback.message.edit_text(text=text, reply_markup=kb.as_markup())
+    await state.set_state(SettingsPreferences.waiting_to_stop_subscription)
+
+
+@router.callback_query(
+    F.data == "yes_confirm", SettingsPreferences.waiting_to_stop_subscription
+)
+async def stop_subscription(callback: CallbackQuery, state: FSMContext):
+    user_id = int(callback.from_user.id)
+    user_data = await state.get_data()
+    if user_id != cfg.ADMIN_ID:
+        await stop_subscription()
+        await callback.message.edit_text(text="Ваша подписка успешно остановлена")
+    else:
+        await callback.message.edit_text(
+            text="Вы администратор, у вас и так бесконечная подписка xD"
+        )
+
+    last_test_call_time = user_data.get("last_test_call_time")
+    await state.clear()
+    if last_test_call_time:
+        await state.update_data(last_test_call_time=last_test_call_time)
+
+
+@router.callback_query(
+    F.data == "no_deny", StateFilter(SettingsPreferences.waiting_to_stop_subscription)
+)
+async def stop_subscription_deny(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    user_data = await state.get_data()
+    last_test_call_time = user_data.get("last_test_call_time")
+    await state.clear()
+    if last_test_call_time:
+        await state.update_data(last_test_call_time=last_test_call_time)

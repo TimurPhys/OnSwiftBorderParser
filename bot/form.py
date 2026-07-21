@@ -179,7 +179,11 @@ async def process_number(message: Message, state: FSMContext):
         await state.update_data(number=number)
         user_data = await state.get_data()
         await message.answer(text="Ваш номер телефона успешно принят.")
+
+        last_test_call_time = user_data.get("last_test_call_time")
         await state.clear()
+        if last_test_call_time:
+            await state.update_data(last_test_call_time=last_test_call_time)
 
         filter = {
             "borders": user_data["borders"],

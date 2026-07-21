@@ -17,6 +17,7 @@ VONAGE_VIRTUAL_NUMBER = os.getenv("VONAGE_VIRTUAL_NUMBER")
 
 DB_NAME = os.getenv("DB_NAME")
 
+INTERVAL_BETWEEN_CALLS = 2  # в часах (2 часа)
 border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}
 trans = {"morning": "Утро", "day": "День", "night": "Вечер/ночь", "any": "Любое"}
 # --- КОНСТАНТЫ ----
@@ -26,6 +27,3 @@ monitoring_task = None
 monitoring_counter = 0
 first_monitoring_date = None
 last_monitoring_date = None
-
-# Словарь с персональными настройками пользователей
-USER_FILTERS = {}

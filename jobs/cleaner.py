@@ -4,16 +4,17 @@ from aiogram import Bot
 
 from config.config import DB_NAME
 
+
 async def check_and_expire_subscriptions(bot: Bot):
     while True:
         try:
             async with aiosqlite.connect(DB_NAME) as db:
                 # Найти всех оплаченных, у кого прошло > 30 дней
                 cursor = await db.execute("""
-                    SELECT user_id, is_trial, is_paid 
+                    SELECT user_id, is_trial, is_paid, days_left
                     FROM users 
-                    WHERE (is_paid = 1 AND datetime(last_payment_date) < datetime('now', '-30 days'))
-                       OR (is_trial = 1 AND datetime(last_payment_date) < datetime('now', '-7 days'))
+                    WHERE (is_paid = 1 OR is_trial = 1 AND has_stopped = 0)
+                        AND datetime(last_payment_date, '+' || days_left || ' days') < datetime('now')
                 """)
                 expired_users = await cursor.fetchall()
                 for user in expired_users:
@@ -49,7 +50,7 @@ async def check_and_expire_subscriptions(bot: Bot):
                     await db.execute(
                         f"""
                         UPDATE users 
-                        SET is_trial = 0, is_paid = 0, has_dlc = 0 
+                        SET is_trial = 0, is_paid = 0, has_dlc = 0, days_left = 0
                         WHERE user_id IN ({placeholders})
                     """,
                         user_ids,
