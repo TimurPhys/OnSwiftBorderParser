@@ -3,7 +3,7 @@ import json
 
 from aiohttp import web
 from aiogram import Bot
-from db.db import just_bought_subscription
+from db.db import just_bought_subscription, bought_full_package, has_purchased_calls
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,11 @@ async def stripe_webhook(request):
             session = event['data']['object']
             
             # Безопасное извлечение reference_id (защита от None/отсутствия поля)
-            telegram_user_id = session.get('client_reference_id')
+            raw_ref = session.get('client_reference_id')
+            user_id_str, offer_type_str = raw_ref.split("_")
+
+            telegram_user_id = int(user_id_str)
+            offer_type = int(offer_type_str)
             
             if not telegram_user_id:
                 logger.warning("⚠️ Передан платеж без client_reference_id. Пропускаем.")
@@ -42,8 +46,16 @@ async def stripe_webhook(request):
 
             # --- 3. ЗАЩИТА ПРИ РАБОТЕ С БАЗОЙ ДАННЫХ (SQLite) ---
             try:
-                await just_bought_subscription(user_id)
-                logger.info(f"✅ База обновлена: подписка начислена юзеру {user_id}")
+                print(f"offer_type={offer_type}")
+                if offer_type == 1:
+                    await just_bought_subscription(user_id)
+                    logger.info(f"✅ База обновлена: подписка начислена юзеру {user_id}")
+                elif offer_type == 2:
+                    await bought_full_package(user_id)
+                    logger.info(f"✅ База обновлена: полная подписка начислена юзеру {user_id}")
+                elif offer_type == 3:
+                    await has_purchased_calls(user_id)
+                    logger.info(f"✅ База обновлена: юзер {user_id} докупил звонки")
             except Exception as db_err:
                 logger.error(f"❌ КРИТИЧЕСКАЯ ОШИБКА БД для юзера {user_id}: {db_err}")
                 
@@ -54,14 +66,20 @@ async def stripe_webhook(request):
 
             # --- 4. ЗАЩИТА ОТ БЛОКИРОВОК И ОШИБОК TELEGRAM API ---
             try:
+                text = "🎉 **Оплата прошла успешно!**\n\n"
+                match offer_type:
+                    case 1:
+                        text += "Подписка активирована на 31 день. Спасибо, что пользуетесь нашим ботом!"
+                    case 2:
+                        text += "Полная подписка со звонками активирована на 31 день. Спасибо, что пользуетесь нашим ботом!"
+                    case 3:
+                        text += "Вы успешно докупили возможность получать звонки. Спасибо, что пользуетесь нашим ботом!"
                 await bot.send_message(
                     chat_id=user_id, 
-                    text="🎉 **Оплата прошла успешно!**\n\nПодписка активирована на 30 дней. Спасибо, что пользуетесь нашим ботом!"
+                    text=text
                 )
                 logger.info(f"✉️ Сообщение об успешной оплате отправлено юзеру {user_id}")
             except Exception as tg_err:
-                # Если юзер заблокировал бота сразу после оплаты, база-то уже обновилась, 
-                # поэтому глушим ошибку и не ломаем ответ для Stripe.
                 logger.warning(f"⚠️ Не удалось отправить сообщение в ТГ юзеру {user_id}: {tg_err}")
 
         # Если тип события не checkout.session.completed (например, Stripe прислал отчет о другом действии)

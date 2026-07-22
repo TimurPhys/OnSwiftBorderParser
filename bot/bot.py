@@ -60,7 +60,8 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
     user = await get_user_instance(user_id)
     await state.clear()
 
-    if not user["exists"] and user_id != cfg.ADMIN_ID:
+    # Пользователь не существует БД и это не админ
+    if not user.get("exists") and user_id != cfg.ADMIN_ID:
         welcome_text = (
             "👋 **Привет! Я твой личный бот-информатор по границам Эстония-Россия**\n\n"
             "Я собираю информацию о свободных местах каждые 5 минут с сайта GoSwift "
@@ -74,17 +75,19 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
             text=welcome_text, reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
         await state.update_data(last_msg_id=sent_message.message_id)
-    # Пользователь уже существует, но остановил подписку
-    if user["has_stopped"]:
-        await state.set_state(MenuStates.waiting_to_resume_subscription)
-        kb, start_text = get_user_interface(user, user_id)
-        await message.answer(
-            text=start_text, reply_markup=kb.as_markup(), parse_mode="HTML"
-        )
-    # Пользователь уже существует и активен
-    else:
-        kb, start_text = get_user_interface(user, user_id)
-        await message.answer(text=start_text, reply_markup=kb.as_markup())
+    # Пользователь уже существует или это админ
+    if user.get("exists") or user_id == cfg.ADMIN_ID:
+        # Пользователь остановил подписку
+        if user.get("has_stopped"):
+            await state.set_state(MenuStates.waiting_to_resume_subscription)
+            kb, start_text = get_user_interface(user, user_id)
+            await message.answer(
+                text=start_text, reply_markup=kb.as_markup(), parse_mode="HTML"
+            )
+        # Пользователь активен
+        else:
+            kb, start_text = get_user_interface(user, user_id)
+            await message.answer(text=start_text, reply_markup=kb.as_markup())
 
 
 @router.callback_query(

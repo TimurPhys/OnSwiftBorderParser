@@ -26,13 +26,13 @@ async def main():
 
     app = web.Application()
     app["bot"] = bot
-    app.router.add_post("/webhook/stripe", stripe_webhook)
+    app.router.add_post("/stripe-webhook", stripe_webhook)
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    site = web.TCPSite(runner, "0.0.0.0", 8000)
     await site.start()
-    print("🌐 Веб-сервер Stripe Webhook запущен на порту 8080.")
+    print("🌐 Веб-сервер Stripe Webhook запущен на порту 8000.")
 
     asyncio.create_task(check_and_expire_subscriptions(bot))
     print("Чистильщик подписок запущен!")

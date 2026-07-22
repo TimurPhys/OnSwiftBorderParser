@@ -47,18 +47,18 @@ def get_inline_plans(type: int, user_id: int):
     if type == 1:
         builder.button(
             text="Докупить звонки",
-            url=f"{PAYMENT_CALLS_LINK}?client_reference_id={user_id}?offer_type=3",
+            url=f"{PAYMENT_CALLS_LINK}?client_reference_id={user_id}_3",
         )
     elif type == 2:
         builder.button(
             text="Купить подписку (5 €)",
             callback_data="type_1",
-            url=f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}?offer_type=1",
+            url=f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}_1",
         )
         builder.button(
             text="Купить подписку + звонки (8 €)",
             callback_data="type_2",
-            url=f"{PAYMENT_SUBSCRIPTION_AND_CALLS_LINK}?client_reference_id={user_id}?offer_type=2",
+            url=f"{PAYMENT_SUBSCRIPTION_AND_CALLS_LINK}?client_reference_id={user_id}_2",
         )
     builder.adjust(1)
     return builder
@@ -129,12 +129,12 @@ def get_inline_init_buttons(user_id: int):
     builder.button(
         text="Купить подписку (5 €)",
         callback_data="type_1",
-        url=f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}?offer_type=1",
+        url=f"{PAYMENT_SUBSCRIPTION_LINK}?client_reference_id={user_id}_1",
     )
     builder.button(
         text="Купить подписку + звонки (8 €)",
         callback_data="type_2",
-        url=f"{PAYMENT_SUBSCRIPTION_AND_CALLS_LINK}?client_reference_id={user_id}?offer_type=2",
+        url=f"{PAYMENT_SUBSCRIPTION_AND_CALLS_LINK}?client_reference_id={user_id}_2",
     )
     builder.button(text="Начать пробный период (7-дней)", callback_data="trial")
     builder.adjust(1)
