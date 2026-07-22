@@ -12,11 +12,13 @@ from bot.view.commands import set_main_menu
 import config.config as config
 from db.db import init_db
 from jobs.webhook import stripe_webhook
+from jobs.cleaner import check_and_expire_subscriptions
 
 bot = Bot(token=config.BOT_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
+
 
 async def main():
     print("Запуск...")
@@ -31,6 +33,9 @@ async def main():
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
     print("🌐 Веб-сервер Stripe Webhook запущен на порту 8080.")
+
+    asyncio.create_task(check_and_expire_subscriptions(bot))
+    print("Чистильщик подписок запущен!")
 
     dp.include_router(router)
     dp.include_router(form_router)

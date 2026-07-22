@@ -5,15 +5,18 @@ from aiogram.types import (
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.filters import StateFilter
-from datetime import datetime, timedelta
+from aiogram.filters import StateFilter, CommandStart
+from datetime import datetime
 import config.config as cfg
 from bot.view.kb import *
+from bot.filters.sub_filter import IsSubscriptionActive
 
 from db.db import (
     get_user_instance,
     start_trial_subscription,
     get_user_filters,
+    stop_subscription,
+    resume_subscription,
 )
 from jobs.caller import send_voice_alert
 
@@ -22,6 +25,7 @@ router = Router()
 
 class MenuStates(StatesGroup):
     waiting_to_pay = State()
+    waiting_to_resume_subscription = State()
     is_configuring_filter = State()
     in_settings = State()
 
@@ -46,7 +50,7 @@ async def delete_last_message(old_msg_id, user_id, bot: Bot, state: FSMContext):
 
 
 # --- ЛОГИКА БОТА ---
-@router.message(F.text == "/start")
+@router.message(CommandStart, StateFilter(None))
 async def start_cmd(message: Message, state: FSMContext, bot: Bot):
     user_data = await state.get_data()
     user_id = int(message.from_user.id)
@@ -70,13 +74,36 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
             text=welcome_text, reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
         await state.update_data(last_msg_id=sent_message.message_id)
-    # Пользователь уже существует и записан
+    # Пользователь уже существует, но остановил подписку
+    if user["has_stopped"]:
+        await state.set_state(MenuStates.waiting_to_resume_subscription)
+        kb, start_text = get_user_interface(user, user_id)
+        await message.answer(
+            text=start_text, reply_markup=kb.as_markup(), parse_mode="HTML"
+        )
+    # Пользователь уже существует и активен
     else:
         kb, start_text = get_user_interface(user, user_id)
         await message.answer(text=start_text, reply_markup=kb.as_markup())
 
 
-@router.callback_query(F.data == "trial")
+@router.callback_query(
+    F.data == "resume_subscription",
+    MenuStates.waiting_to_resume_subscription,
+    ~IsSubscriptionActive(),
+)
+async def resume_subscription_func(callback: CallbackQuery, state: FSMContext):
+    user_id = int(callback.from_user.id)
+    await resume_subscription(user_id=user_id)
+    await callback.message.edit_text(
+        text="Ваша подписка успешно восстановлена. Можете продолжать пользоваться ботом."
+    )
+    await state.clear()
+
+
+@router.callback_query(
+    F.data == "trial",
+)
 async def ask_to_start_trial(callback: CallbackQuery, state: FSMContext):
     kb = get_inline_buttons()
     await callback.message.edit_text(
@@ -115,7 +142,7 @@ async def deny_trial(callback: CallbackQuery, state: FSMContext):
 
 
 # Тарифы
-@router.callback_query(F.data.startswith("list_plans"))
+@router.callback_query(F.data.startswith("list_plans"), IsSubscriptionActive())
 async def list_plans(callback: CallbackQuery, state: FSMContext):
     plans = int(callback.data.split("_")[-1])
     user_id = int(callback.from_user.id)
@@ -137,7 +164,7 @@ async def list_plans(callback: CallbackQuery, state: FSMContext):
 
 
 ## --- Получение статистики ---
-@router.callback_query(F.data == "check")
+@router.callback_query(F.data == "check", IsSubscriptionActive(), StateFilter(None))
 async def check_monitorings(callback: CallbackQuery):
     if cfg.monitoring_task and not cfg.monitoring_task.done():
         if cfg.last_monitoring_date is None:
@@ -186,7 +213,7 @@ async def check_monitorings(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "help")
+@router.callback_query(F.data == "help", IsSubscriptionActive(), StateFilter(None))
 async def show_settings(callback: CallbackQuery, state: FSMContext):
     text_message = (
         f"Это окно настроек и помощи\n"
@@ -200,7 +227,9 @@ async def show_settings(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data == "test_call", MenuStates.in_settings)
+@router.callback_query(
+    F.data == "test_call", MenuStates.in_settings, IsSubscriptionActive()
+)
 async def test_call(callback: CallbackQuery, state: FSMContext):
     # Делаем запрос в БД и смотрим оставляли ли человек свой номер телефона
     user_id = int(callback.from_user.id)
@@ -226,7 +255,7 @@ async def test_call(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(SettingsPreferences.waiting_for_number)
+@router.message(SettingsPreferences.waiting_for_number, IsSubscriptionActive())
 async def process_number(message: Message, state: FSMContext):
     user_text = message.text
     if user_text[0] == "+" and user_text[1:].isdigit():
@@ -246,7 +275,9 @@ async def process_number(message: Message, state: FSMContext):
         )
 
 
-@router.callback_query(F.data == "yes_confirm", SettingsPreferences.waiting_to_call)
+@router.callback_query(
+    F.data == "yes_confirm", SettingsPreferences.waiting_to_call, IsSubscriptionActive()
+)
 async def process_call(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.from_user.id)
     user_data = await state.get_data()
@@ -265,13 +296,17 @@ async def process_call(callback: CallbackQuery, state: FSMContext):
     await state.clear()
 
 
-@router.callback_query(F.data == "no_deny", SettingsPreferences.waiting_to_call)
+@router.callback_query(
+    F.data == "no_deny", SettingsPreferences.waiting_to_call, IsSubscriptionActive()
+)
 async def process_call_deny(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     await state.clear()
 
 
-@router.callback_query(F.data == "stop_subscription", MenuStates.in_settings)
+@router.callback_query(
+    F.data == "stop_subscription", MenuStates.in_settings, IsSubscriptionActive()
+)
 async def ask_to_stop_subscription(callback: CallbackQuery, state: FSMContext):
     kb = get_inline_buttons()
     user_id = int(callback.from_user.id)
@@ -296,13 +331,15 @@ async def ask_to_stop_subscription(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(
-    F.data == "yes_confirm", SettingsPreferences.waiting_to_stop_subscription
+    F.data == "yes_confirm",
+    SettingsPreferences.waiting_to_stop_subscription,
+    IsSubscriptionActive(),
 )
-async def stop_subscription(callback: CallbackQuery, state: FSMContext):
+async def stop_subscription_func(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.from_user.id)
     user_data = await state.get_data()
     if user_id != cfg.ADMIN_ID:
-        await stop_subscription()
+        await stop_subscription(user_id=user_id)
         await callback.message.edit_text(text="Ваша подписка успешно остановлена")
     else:
         await callback.message.edit_text(
@@ -316,7 +353,9 @@ async def stop_subscription(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(
-    F.data == "no_deny", StateFilter(SettingsPreferences.waiting_to_stop_subscription)
+    F.data == "no_deny",
+    StateFilter(SettingsPreferences.waiting_to_stop_subscription),
+    IsSubscriptionActive(),
 )
 async def stop_subscription_deny(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
@@ -325,3 +364,13 @@ async def stop_subscription_deny(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     if last_test_call_time:
         await state.update_data(last_test_call_time=last_test_call_time)
+
+
+@router.callback_query(~IsSubscriptionActive())
+async def process_stopped_subscription_click(callback: CallbackQuery):
+    # На все остальные старые кнопки шлем всплывающее уведомление (alert)
+    await callback.answer(
+        "⏸ Ваша подписка остановлена.\n"
+        "Возобновите подписку в главном меню, чтобы снова использовать эти функции.",
+        show_alert=True,  # Показывает всплывающее окном с кнопкой ОК
+    )

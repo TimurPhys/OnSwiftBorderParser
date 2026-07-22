@@ -1,18 +1,20 @@
 from aiogram import Router, F
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.filters import StateFilter
 from datetime import datetime
 import re
 from bot.view.kb import *
 import config.config as cfg
 from db.db import save_user_filter
+from bot.filters.sub_filter import IsSubscriptionActive
 
 form_router = Router()
 
 
 class SearchPreferences(StatesGroup):
+    waiting_to_choose = State()
     waiting_for_border = State()
     waiting_for_date = State()
     waiting_for_time = State()
@@ -20,10 +22,24 @@ class SearchPreferences(StatesGroup):
 
 
 # 2. Стартуем опрос по команде /set_filter
-@form_router.callback_query(F.data == "set_filter")
+@form_router.callback_query(
+    F.data == "set_filter", IsSubscriptionActive(), StateFilter(None)
+)
+async def wait_to_set_filter(callback: CallbackQuery, state: FSMContext):
+    kb = get_inline_buttons()
+    text = f"Вы уверены, что хотите установить/обновить фильтр?"
+    await callback.message.answer(text=text, reply_markup=kb.as_markup())
+    await state.set_state(SearchPreferences.waiting_to_choose)
+
+    await callback.answer()
+
+
+@form_router.callback_query(
+    F.data == "yes_confirm", IsSubscriptionActive(), SearchPreferences.waiting_to_choose
+)
 async def class_start_filter(callback: CallbackQuery, state: FSMContext):
     inline_kb_borders = get_inline_borders_kb()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "📝 Настраиваем фильтр для звонков.\n\nКакая **граница** интересует? (можно выбрать несколько)",
         reply_markup=inline_kb_borders.as_markup(),
     )
@@ -31,8 +47,20 @@ async def class_start_filter(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@form_router.callback_query(
+    F.data == "no_deny", IsSubscriptionActive(), SearchPreferences.waiting_to_choose
+)
+async def deny_start_filter(callback: CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await state.clear()
+
+
 # 3. Ловим границу
-@form_router.callback_query(SearchPreferences.waiting_for_border)
+@form_router.callback_query(
+    F.data.startswith("border"),
+    SearchPreferences.waiting_for_border,
+    IsSubscriptionActive(),
+)
 async def process_border(callback: CallbackQuery, state: FSMContext):
     # Если нажали кнопку продолжить
     if callback.data == "border_continue":
@@ -94,7 +122,9 @@ async def process_border(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@form_router.callback_query(SearchPreferences.waiting_for_date, F.data == "date_any")
+@form_router.callback_query(
+    SearchPreferences.waiting_for_date, F.data == "date_any", IsSubscriptionActive()
+)
 async def process_date_callback(callback: CallbackQuery, state: FSMContext):
     await state.update_data(date_start="any", date_end="any")
     await ask_for_time(callback.message, state)
@@ -102,7 +132,7 @@ async def process_date_callback(callback: CallbackQuery, state: FSMContext):
 
 
 # 4. ЛОВИМ ДАТУ (Вариант Б: Если пользователь ввел ПЕРИОД текстом)
-@form_router.message(SearchPreferences.waiting_for_date)
+@form_router.message(SearchPreferences.waiting_for_date, IsSubscriptionActive())
 async def process_date_text(message: Message, state: FSMContext):
     text = message.text.strip()
 
@@ -160,7 +190,11 @@ async def ask_for_time(message: Message, state: FSMContext):
     await state.set_state(SearchPreferences.waiting_for_time)
 
 
-@form_router.callback_query(SearchPreferences.waiting_for_time)
+@form_router.callback_query(
+    F.data.startswith("time"),
+    SearchPreferences.waiting_for_time,
+    IsSubscriptionActive(),
+)
 async def process_number(callback: CallbackQuery, state: FSMContext):
     time_val = callback.data.split("_")[1]
     await state.update_data(time=time_val)
@@ -171,7 +205,7 @@ async def process_number(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@form_router.message(SearchPreferences.waiting_for_number)
+@form_router.message(SearchPreferences.waiting_for_number, IsSubscriptionActive())
 async def process_number(message: Message, state: FSMContext):
     user_text = message.text
     if user_text[0] == "+" and user_text[1:].isdigit():

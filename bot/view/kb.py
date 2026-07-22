@@ -68,13 +68,25 @@ def get_user_interface(user: dict, user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="Статистика", callback_data="check")
     builder.button(text="Помощь (Настройки)", callback_data="help")
-    if not user["exists"] and user_id == ADMIN_ID:
+    if user_id == ADMIN_ID:
         start_text = f"Здравствуйте, администратор. Предоставляю вам полный контроль над ботом и мониторингом."
         builder.button(text="Настроить фильтр", callback_data="set_filter")
         builder.button(text="Панель админа", callback_data="admin_panel")
     else:
         last_payment_date = user["last_payment_date"]
-        if user["is_trial"]:
+        if user["has_stopped"]:
+            days_left = user.get("days_left")
+            start_text = (
+                "Ваш профиль в данный момент неактивен, т.к. вы приостановили действие подписки.\n"
+                "Если вы хотите продолжить получать уведомления о ближайших местах на границе, то вам придется возобновить работу подписки.\n"
+                f"По нашим данным, подписка будет действовать еще - <b>{days_left}</b> дней."
+            )
+            new_builder = InlineKeyboardBuilder()
+            new_builder.button(
+                text="Возобновить подписку", callback_data="resume_subscription"
+            )
+            return new_builder, start_text
+        elif user["is_trial"]:
             end_of_subscription = datetime.strftime(
                 datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
                 + timedelta(days=7),
@@ -134,6 +146,7 @@ def get_inline_buttons():
     builder.button(text="Да", callback_data="yes_confirm")
     builder.button(text="Нет", callback_data="no_deny")
     return builder
+
 
 def get_settings_buttons():
     builder = InlineKeyboardBuilder()

@@ -145,11 +145,14 @@ async def get_user_instance(user_id: int) -> dict:
 
 async def get_user_last_call_date(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("""
+        cursor = await db.execute(
+            """
             SELECT last_call_date FROM users WHERE user_id = ?
-        """, (user_id, ))
+        """,
+            (user_id,),
+        )
         row = await cursor.fetchone()
-        return row
+        return row[0]
 
 
 async def update_user_last_call_date(user_id: int):
@@ -187,7 +190,7 @@ async def get_user_stats() -> dict:
             return {"trial": trial, "paid": paid, "have_dlc": have_dlc}
 
 
-async def stop_subscription(user_id):
+async def stop_subscription(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
             """
@@ -208,12 +211,14 @@ async def resume_subscription(user_id):
         await db.execute(
             """
             UPDATE users
+            SET
                 has_stopped = 0,
                 last_payment_date = ?
             WHERE user_id = ?;
             """,
-            (user_id, now_str),
+            (now_str, user_id),
         )
+        print(f"Подписка пользователя {user_id} успешно возобновлена")
         await db.commit()
 
 

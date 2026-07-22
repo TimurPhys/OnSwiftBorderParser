@@ -4,7 +4,6 @@ from aiogram import Bot
 
 from config.config import DB_NAME
 
-
 async def check_and_expire_subscriptions(bot: Bot):
     while True:
         try:

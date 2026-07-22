@@ -1,11 +1,11 @@
 import asyncio
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
+from aiogram.filters import StateFilter
 from datetime import datetime
 
 from bot.view.kb import get_monitoring_kb
 from bot.monitoring_loop import monitoring_loop
-
 from db.db import get_user_stats
 
 import config.config as cfg
@@ -13,7 +13,7 @@ import config.config as cfg
 admin_router = Router()
 
 
-@admin_router.callback_query(F.data == "admin_panel")
+@admin_router.callback_query(F.data == "admin_panel", StateFilter(None))
 async def show_admin_panel(callback: CallbackQuery):
     monitoring_state = (
         "<b>Активен</b>"
@@ -41,11 +41,14 @@ async def show_admin_panel(callback: CallbackQuery):
 
 @admin_router.callback_query(F.data == "start_monitoring")
 async def start_monitoring(callback: CallbackQuery, bot: Bot):
-    await callback.message.edit_text(
-        "Принято! Запускаю фоновую задачу. Буду проверять каждые 5 минут...",
-    )
-    cfg.first_monitoring_date = datetime.now()
-    cfg.monitoring_task = asyncio.create_task(monitoring_loop("B", "ALL", bot))
+    if cfg.monitoring_task and not cfg.monitoring_task.done():
+        await callback.message.edit_text("Мониторинг уже запущен.")
+    else:
+        await callback.message.edit_text(
+            "Принято! Запускаю фоновую задачу. Буду проверять каждые 5 минут...",
+        )
+        cfg.first_monitoring_date = datetime.now()
+        cfg.monitoring_task = asyncio.create_task(monitoring_loop("B", "ALL", bot))
 
 
 @admin_router.callback_query(F.data == "stop_monitoring")

@@ -15,12 +15,14 @@ client = Vonage(
     )
 )
 
-
 async def send_voice_alert(user_id, message, voice_to_number):
     last_call_date = await get_user_last_call_date(user_id)
 
     if last_call_date is not None:
-        last_call_date_dt = last_call_date.strptime("%Y-%m-%d %H:%M:%S")
+        try:
+            last_call_date_dt = datetime.strptime(last_call_date, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            last_call_date_dt = None
         if datetime.now() >= last_call_date_dt + timedelta(
             hours=cfg.INTERVAL_BETWEEN_CALLS
         ):  # Можно сделать звонок, прошло 2 часа
