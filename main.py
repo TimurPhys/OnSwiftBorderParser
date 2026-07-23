@@ -30,9 +30,9 @@ async def main():
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8000)
+    site = web.TCPSite(runner, "127.0.0.1", config.WEBHOOK_PORT)
     await site.start()
-    print("🌐 Веб-сервер Stripe Webhook запущен на порту 8000.")
+    print(f"🌐 Веб-сервер Stripe Webhook запущен на порту {config.WEBHOOK_PORT}.")
 
     asyncio.create_task(check_and_expire_subscriptions(bot))
     print("Чистильщик подписок запущен!")

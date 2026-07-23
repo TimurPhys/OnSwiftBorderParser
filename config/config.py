@@ -17,7 +17,7 @@ VONAGE_PRIVATE_KEY = os.getenv("VONAGE_PRIVATE_KEY")
 VONAGE_VIRTUAL_NUMBER = os.getenv("VONAGE_VIRTUAL_NUMBER")
 
 DB_NAME = os.getenv("DB_NAME")
-
+WEBHOOK_PORT = os.getenv("WEBHOOK_PORT")
 
 INTERVAL_BETWEEN_CALLS = 2  # в часах (2 часа)
 border_names = {1: "Нарва", 2: "Койдула", 3: "Лухамаа"}

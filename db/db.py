@@ -9,11 +9,12 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
+                is_superuser INTEGER DEFAULT 0, -- 👈 Флаг суперюзера
                 is_trial INTEGER DEFAULT 0,
                 is_paid INTEGER DEFAULT 0,  
                 has_dlc INTEGER DEFAULT 0,
                 last_payment_date TEXT,
-                days_left INTEGER NOT NULL,
+                days_left INTEGER DEFAULT NULL,
                 has_stopped INTEGER DEFAULT 0,
                 last_call_date TEXT DEFAULT NULL
             );
@@ -123,7 +124,7 @@ async def has_purchased_calls(user_id: int):
 async def get_user_instance(user_id: int) -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
-            "SELECT is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped, last_call_date FROM users WHERE user_id = ?",
+            "SELECT is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped, last_call_date, is_superuser FROM users WHERE user_id = ?",
             (user_id,),
         )
         row = await cursor.fetchone()
@@ -140,6 +141,7 @@ async def get_user_instance(user_id: int) -> dict:
             "days_left": int(row[4]),
             "has_stopped": bool(row[5]),
             "last_call_date": row[6],
+            "is_superuser": bool(row[7]),
         }
 
 
@@ -304,3 +306,28 @@ async def get_user_filters(user_ids) -> dict | None:
                     "number": row["number"],
                 }
             return user_filters
+
+
+async def get_superusers_list() -> list | None:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("""
+            SELECT user_id FROM users WHERE is_superuser = 1
+        """)
+        rows = await cursor.fetchall()
+        if rows:
+            return [int(row[0]) for row in rows]
+        return None
+
+
+async def change_superuser_state(user_id, new_state):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            """
+        INSERT INTO users (user_id, is_superuser)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                    is_superuser = ?
+        """,
+            (user_id, new_state, new_state),
+        )
+        await db.commit()

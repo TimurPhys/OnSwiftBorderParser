@@ -4,9 +4,10 @@ from config.config import (
     PAYMENT_CALLS_LINK,
     ADMIN_ID,
 )
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, KeyboardButtonRequestUser
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
+from random import randint
 
 kb_category = ReplyKeyboardMarkup(
     keyboard=[
@@ -73,8 +74,11 @@ def get_user_interface(user: dict, user_id: int):
         builder.button(text="Настроить фильтр", callback_data="set_filter")
         builder.button(text="Панель админа", callback_data="admin_panel")
     else:
-        last_payment_date = user["last_payment_date"]
-        if user["has_stopped"]:
+        if user.get("is_superuser"):
+            start_text = f"Здравствуйте, супер-пользователь. Администратор дал вам неограниченные права использования бота."
+            builder.button(text="Настроить фильтр", callback_data="set_filter")
+        elif user["has_stopped"]:
+            last_payment_date = user["last_payment_date"]
             days_left = user.get("days_left")
             start_text = (
                 "Ваш профиль в данный момент неактивен, т.к. вы приостановили действие подписки.\n"
@@ -116,10 +120,11 @@ def get_user_interface(user: dict, user_id: int):
     return builder, start_text
 
 
-def get_monitoring_kb():
+def get_admin_kb():
     builder = InlineKeyboardBuilder()
     builder.button(text="Начать мониторинг", callback_data="start_monitoring")
     builder.button(text="Остановить мониторинг", callback_data="stop_monitoring")
+    builder.button(text="Супер-пользователи", callback_data="super_users")
     builder.adjust(1)
     return builder
 
@@ -174,3 +179,37 @@ def get_inline_times_kb():
     builder.button(text="🌙 Вечер/Ночь (18:00 - 06:00)", callback_data="time_night")
     builder.adjust(1)
     return builder
+
+
+def remove_superuser_kb(superusers: list):
+    builder = InlineKeyboardBuilder()
+    for user in superusers:
+        builder.button(text=str(user), callback_data=f"user_{str(user)}")
+    builder.adjust(2)
+    builder.button(text="Закончить удаление", callback_data="stop_deletion")
+    builder.adjust(1)
+    return builder
+
+
+def get_user_request_kb(superusers: list):
+    buttons = [
+        KeyboardButton(
+            text="👤 Выбрать пользователя для SuperUser",
+            request_user=KeyboardButtonRequestUser(
+                request_id=42,  # Уникальный ID запроса
+                user_is_bot=False,  # Запретить выбирать ботов
+                max_quantity=1,  # Выбрать ровно 1 человека
+            ),
+        )
+    ]
+    if superusers:
+        buttons.append(KeyboardButton(text="Убрать пользователя"))
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            buttons,
+            [KeyboardButton(text="Выйти")],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+    return kb

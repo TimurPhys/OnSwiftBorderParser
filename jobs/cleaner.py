@@ -12,7 +12,7 @@ async def check_and_expire_subscriptions(bot: Bot):
                 cursor = await db.execute("""
                     SELECT user_id, is_trial, is_paid, days_left
                     FROM users 
-                    WHERE (is_paid = 1 OR is_trial = 1 AND has_stopped = 0)
+                    WHERE (is_paid = 1 OR is_trial = 1 AND has_stopped = 0 AND is_superuser = 0)
                         AND datetime(last_payment_date, '+' || days_left || ' days') < datetime('now')
                 """)
                 expired_users = await cursor.fetchall()

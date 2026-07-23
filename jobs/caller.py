@@ -44,7 +44,7 @@ async def send_voice_alert(user_id, message, voice_to_number):
     if user_id != cfg.ADMIN_ID:
         await update_user_last_call_date(user_id)
     else:
-        logging.info("Производим звонок админу!!!")
+        logging.info("Для админа не обновляем время последнего звонка!!!")
 
 
 async def send_call(message, number):
