@@ -58,10 +58,15 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
     await delete_last_message(old_msg_id, user_id, bot, state)
 
     user = await get_user_instance(user_id)
+    print(user)
     await state.clear()
 
+    # Пользователь обнулен, но уже был как-то добавлен в базу (например, случайно админом)
     # Пользователь не существует БД и это не админ
-    if not user.get("exists") and user_id != cfg.ADMIN_ID:
+    if (not user.get("exists") and user_id != cfg.ADMIN_ID) or (
+        user.get("exists")
+        and (user.get("last_payment_date") is None or user.get("days_left") is None)
+    ):
         welcome_text = (
             "👋 **Привет! Я твой личный бот-информатор по границам Эстония-Россия**\n\n"
             "Я собираю информацию о свободных местах каждые 5 минут с сайта GoSwift "
@@ -76,9 +81,9 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
         )
         await state.update_data(last_msg_id=sent_message.message_id)
     # Пользователь уже существует или это админ
-    if user.get("exists") or user_id == cfg.ADMIN_ID:
+    if user.get("exists") and user.get("last_payment_date") or user_id == cfg.ADMIN_ID:
         # Пользователь остановил подписку
-        if user.get("has_stopped"):
+        if user.get("has_stopped") :
             await state.set_state(MenuStates.waiting_to_resume_subscription)
             kb, start_text = get_user_interface(user, user_id)
             await message.answer(
@@ -218,13 +223,9 @@ async def check_monitorings(callback: CallbackQuery):
 
 @router.callback_query(F.data == "help", IsSubscriptionActive(), StateFilter(None))
 async def show_settings(callback: CallbackQuery, state: FSMContext):
-    text_message = (
-        f"Это окно настроек и помощи\n"
-        "Здесь можно:\n\n"
-        "1. Сделать тестовый звонок\n"
-        "2. Остановить подписку\n"
-    )
-    kb = get_settings_buttons()
+    user_id = int(callback.from_user.id)
+    user = await get_user_instance(user_id)
+    text_message, kb = get_settings_buttons(user)
     await callback.message.answer(text=text_message, reply_markup=kb.as_markup())
     await state.set_state(MenuStates.in_settings)
     await callback.answer()

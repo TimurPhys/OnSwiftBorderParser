@@ -42,7 +42,12 @@ async def start_trial_subscription(user_id: int):
             """
             INSERT INTO users (user_id, is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped)
             VALUES (?, 1, 0, 0, ?, 7, 0)
-        """,
+            ON CONFLICT(user_id) DO UPDATE SET
+                is_trial = 1,
+                last_payment_date = excluded.last_payment_date,
+                days_left = 7,
+                has_stopped = 0
+            """,
             (user_id, now_str),
         )
         await db.commit()
@@ -123,26 +128,30 @@ async def has_purchased_calls(user_id: int):
 # Просто получить объект пользователя (если существует)
 async def get_user_instance(user_id: int) -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute(
-            "SELECT is_trial, is_paid, has_dlc, last_payment_date, days_left, has_stopped, last_call_date, is_superuser FROM users WHERE user_id = ?",
-            (user_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return {"exists": False}
+        db.row_factory = aiosqlite.Row
 
-        return {
-            "exists": True,
-            "user_id": user_id,
-            "is_trial": bool(row[0]),
-            "is_paid": bool(row[1]),
-            "has_dlc": bool(row[2]),
-            "last_payment_date": row[3],
-            "days_left": int(row[4]),
-            "has_stopped": bool(row[5]),
-            "last_call_date": row[6],
-            "is_superuser": bool(row[7]),
-        }
+        async with db.execute(
+            "SELECT * FROM users WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+
+            if not row:
+                return {"exists": False}
+
+            user_data = dict(row)
+
+            for key in (
+                "is_trial",
+                "is_paid",
+                "has_dlc",
+                "has_stopped",
+                "is_superuser",
+            ):
+                if key in user_data:
+                    user_data[key] = bool(user_data[key])
+
+            # Добавляем флаг существования и возвращаем
+            return {"exists": True, **user_data}
 
 
 async def get_user_last_call_date(user_id: int):
@@ -321,13 +330,28 @@ async def get_superusers_list() -> list | None:
 
 async def change_superuser_state(user_id, new_state):
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute(
-            """
-        INSERT INTO users (user_id, is_superuser)
-            VALUES (?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                    is_superuser = ?
-        """,
-            (user_id, new_state, new_state),
-        )
+        if new_state == 1:
+            await db.execute(
+                f"""
+            INSERT INTO users (user_id, is_superuser)
+                VALUES (?, 1)
+                ON CONFLICT(user_id) DO UPDATE SET
+                        is_superuser = 1
+            """,
+                (user_id, ),
+            )
+            
+        elif new_state == 0:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            await db.execute(
+                f"""
+                        INSERT INTO users (user_id, is_superuser, last_payment_date)
+                            VALUES (?, 0, ?)
+                            ON CONFLICT(user_id) DO UPDATE SET
+                                    is_superuser = 0,
+                                    last_payment_date = ?
+                        """,
+                (user_id, now_str, now_str),
+            )
+
         await db.commit()
