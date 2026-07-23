@@ -238,7 +238,7 @@ async def resume_subscription(user_id):
 async def get_all_valid_users_ids():
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("""
-        SELECT user_id FROM users WHERE (is_trial == 1 OR is_paid == 1)
+        SELECT user_id FROM users WHERE (is_trial == 1 OR is_paid == 1 OR is_superuser == 1)
     """)
         rows = await cursor.fetchall()
     return [row[0] for row in rows]
