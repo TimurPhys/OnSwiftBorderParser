@@ -17,6 +17,8 @@ from db.db import (
     get_user_filters,
     stop_subscription,
     resume_subscription,
+    user_has_filters,
+    delete_user_filter,
 )
 from jobs.caller import send_voice_alert
 
@@ -64,7 +66,7 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
     # Пользователь обнулен, но уже был как-то добавлен в базу (например, случайно админом)
     # Пользователь не существует БД и это не админ
     if (not user.get("exists") and user_id != cfg.ADMIN_ID) or (
-        user.get("exists")
+        (user.get("exists") and not user.get("is_superuser"))
         and (user.get("last_payment_date") is None or user.get("days_left") is None)
     ):
         welcome_text = (
@@ -81,9 +83,9 @@ async def start_cmd(message: Message, state: FSMContext, bot: Bot):
         )
         await state.update_data(last_msg_id=sent_message.message_id)
     # Пользователь уже существует или это админ
-    if user.get("exists") and user.get("last_payment_date") or user_id == cfg.ADMIN_ID:
+    if user.get("exists") or user_id == cfg.ADMIN_ID:
         # Пользователь остановил подписку
-        if user.get("has_stopped") :
+        if user.get("has_stopped"):
             await state.set_state(MenuStates.waiting_to_resume_subscription)
             kb, start_text = get_user_interface(user, user_id)
             await message.answer(
@@ -225,9 +227,22 @@ async def check_monitorings(callback: CallbackQuery):
 async def show_settings(callback: CallbackQuery, state: FSMContext):
     user_id = int(callback.from_user.id)
     user = await get_user_instance(user_id)
-    text_message, kb = get_settings_buttons(user)
+    has_filter = await user_has_filters(user_id)
+    print(f"У пользователя: {user_id} есть фильтр == {has_filter}")
+    text_message, kb = get_settings_buttons(user, has_filter)
     await callback.message.answer(text=text_message, reply_markup=kb.as_markup())
     await state.set_state(MenuStates.in_settings)
+    await callback.answer()
+
+
+@router.callback_query(
+    F.data == "remove_filter", IsSubscriptionActive(), MenuStates.in_settings
+)
+async def remove_filter_func(callback: CallbackQuery, state: FSMContext):
+    user_id = int(callback.from_user.id)
+    await callback.message.edit_text(text="Фильтр успешно убран")
+    await delete_user_filter(user_id)
+    await state.clear()
     await callback.answer()
 
 

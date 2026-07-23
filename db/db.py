@@ -265,6 +265,27 @@ async def save_user_filter(user_id: int, filter: dict):
         await db.commit()
 
 
+async def delete_user_filter(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "DELETE FROM user_filters WHERE user_id = ?", (user_id,)
+        )
+        await db.commit()
+
+        # cursor.rowcount показывает, сколько строк было удалено
+        return cursor.rowcount > 0
+
+
+async def user_has_filters(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            "SELECT 1 FROM user_filters WHERE user_id = ? LIMIT 1", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            # Вернет True, если запись есть, и False, если row == None
+            return row is not None
+
+
 async def get_user_filters(user_ids) -> dict | None:
     user_filters = {}
     async with aiosqlite.connect(DB_NAME) as db:
@@ -338,9 +359,9 @@ async def change_superuser_state(user_id, new_state):
                 ON CONFLICT(user_id) DO UPDATE SET
                         is_superuser = 1
             """,
-                (user_id, ),
+                (user_id,),
             )
-            
+
         elif new_state == 0:
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             await db.execute(

@@ -74,48 +74,49 @@ def get_user_interface(user: dict, user_id: int):
         builder.button(text="Настроить фильтр", callback_data="set_filter")
         builder.button(text="Панель админа", callback_data="admin_panel")
     else:
-        last_payment_date = user.get("last_payment_date")
         if user.get("is_superuser"):
             start_text = f"Здравствуйте, супер-пользователь. Администратор дал вам неограниченные права использования бота."
             builder.button(text="Настроить фильтр", callback_data="set_filter")
-        elif user["has_stopped"]:
-            days_left = user.get("days_left")
-            start_text = (
-                "Ваш профиль в данный момент неактивен, т.к. вы приостановили действие подписки.\n"
-                "Если вы хотите продолжить получать уведомления о ближайших местах на границе, то вам придется возобновить работу подписки.\n"
-                f"По нашим данным, подписка будет действовать еще - <b>{days_left}</b> дней."
-            )
-            new_builder = InlineKeyboardBuilder()
-            new_builder.button(
-                text="Возобновить подписку", callback_data="resume_subscription"
-            )
-            return new_builder, start_text
-        elif user["is_trial"]:
-            end_of_subscription = datetime.strftime(
-                datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
-                + timedelta(days=7),
-                "%Y-%m-%d",
-            )
-            start_text = f"Ваш профиль активен и находится в пробном периоде. Вы будете получать уведомления о свободных местах на границе до {end_of_subscription}."
-            builder.button(
-                text="Тарифы",
-                callback_data="list_plans_2",
-            )
         else:
-            end_of_subscription = datetime.strftime(
-                datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
-                + timedelta(days=31),
-                "%Y-%m-%d",
-            )
-            if user["is_paid"] and not user["has_dlc"]:
-                start_text = f"Ваш профиль активен и действует стандратная подписка без звонков. Вы будете получать уведомления о свободных местах на границе до {end_of_subscription}."
+            last_payment_date = user.get("last_payment_date")
+            if user["has_stopped"]:
+                days_left = user.get("days_left")
+                start_text = (
+                    "Ваш профиль в данный момент неактивен, т.к. вы приостановили действие подписки.\n"
+                    "Если вы хотите продолжить получать уведомления о ближайших местах на границе, то вам придется возобновить работу подписки.\n"
+                    f"По нашим данным, подписка будет действовать еще - <b>{days_left}</b> дней."
+                )
+                new_builder = InlineKeyboardBuilder()
+                new_builder.button(
+                    text="Возобновить подписку", callback_data="resume_subscription"
+                )
+                return new_builder, start_text
+            elif user["is_trial"]:
+                end_of_subscription = datetime.strftime(
+                    datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
+                    + timedelta(days=7),
+                    "%Y-%m-%d",
+                )
+                start_text = f"Ваш профиль активен и находится в пробном периоде. Вы будете получать уведомления о свободных местах на границе до {end_of_subscription}."
                 builder.button(
                     text="Тарифы",
-                    callback_data="list_plans_1",
+                    callback_data="list_plans_2",
                 )
-            elif user["is_paid"] and user["has_dlc"]:
-                start_text = f"Ваш профиль активен и действует полная подписка со звонками. Вы будете получать уведомления и звонки о свободных местах на границе до {end_of_subscription}."
-                builder.button(text="Настроить фильтр", callback_data="set_filter")
+            else:
+                end_of_subscription = datetime.strftime(
+                    datetime.strptime(last_payment_date, "%Y-%m-%d %H:%M:%S")
+                    + timedelta(days=31),
+                    "%Y-%m-%d",
+                )
+                if user["is_paid"] and not user["has_dlc"]:
+                    start_text = f"Ваш профиль активен и действует стандратная подписка без звонков. Вы будете получать уведомления о свободных местах на границе до {end_of_subscription}."
+                    builder.button(
+                        text="Тарифы",
+                        callback_data="list_plans_1",
+                    )
+                elif user["is_paid"] and user["has_dlc"]:
+                    start_text = f"Ваш профиль активен и действует полная подписка со звонками. Вы будете получать уведомления и звонки о свободных местах на границе до {end_of_subscription}."
+                    builder.button(text="Настроить фильтр", callback_data="set_filter")
     builder.adjust(2)
     return builder, start_text
 
@@ -153,17 +154,18 @@ def get_inline_buttons():
     return builder
 
 
-def get_settings_buttons(user: dict):
+def get_settings_buttons(user: dict, has_filter: bool):
     text_message = (
-            f"Это окно настроек и помощи\n"
-            "Здесь можно:\n\n"
-            "1. Сделать тестовый звонок\n"
-        )
+        f"Это окно настроек и помощи\n" "Здесь можно:\n\n" "- Сделать тестовый звонок\n"
+    )
     builder = InlineKeyboardBuilder()
     builder.button(text="Тестовый звонок", callback_data="test_call")
     if user.get("exists") and not user.get("is_superuser"):
-        text_message += "2. Остановить подписку\n"
+        text_message += "- Остановить подписку\n"
         builder.button(text="Остановить подписку", callback_data="stop_subscription")
+    if has_filter:
+        text_message += "- Убрать фильтр\n"
+        builder.button(text="Убрать фильтр", callback_data="remove_filter")
     return text_message, builder
 
 

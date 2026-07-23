@@ -14,9 +14,10 @@ class IsSubscriptionActive(BaseFilter):
             return False
 
         has_stopped = user.get("has_stopped", 0) == 1
+        is_superuser = user.get("is_superuser") == 1
         is_active = (user.get("is_paid", 0) == 1) or (user.get("is_trial", 0) == 1)
 
-        if user_id != cfg.ADMIN_ID:
+        if user_id != cfg.ADMIN_ID and not is_superuser:
             return is_active and not has_stopped
         else:
             return True
