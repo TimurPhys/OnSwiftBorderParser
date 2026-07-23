@@ -163,7 +163,9 @@ async def get_user_last_call_date(user_id: int):
             (user_id,),
         )
         row = await cursor.fetchone()
-        return row[0]
+        if row:
+            return row[0]
+        return None
 
 
 async def update_user_last_call_date(user_id: int):
